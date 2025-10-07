@@ -1,1 +1,1 @@
-print("kayla")
+print("Nyah Rene is taking CS370")

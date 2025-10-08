@@ -1,10 +1,13 @@
 from PyPDF2 import PdfReader
 
+#gets file
 reader = PdfReader("mathSyllabus.pdf")
 
-with open("extracted.txt", "w") as f:
+with open("extracted.txt", "w", encoding="utf-8") as f:
 
-    for page in reader.pages:
+    for page_num, page in enumerate(reader.pages):
         txt = page.extract_text()
-        if t:
-            f.write(t + "\n")
+        f.write(f"-----Page {page_num + 1}----- \n")
+        if txt:
+            f.write(txt + "\n")
+        f.write("\n\n")

@@ -26,3 +26,10 @@ Purpose of the gitignore:
 Purpose of the .env:   
     Your actual secrets/keys for local dev (Supabase URL/keys, bucket name).
     Why: app reads these at runtime. Never commit this file (it’s in .gitignore).
+
+
+When running the code to access the the API:
+    1. go to your backend folder - cd /Users/kultumlhabaik/Documents/CS370-pixelATE/syllabus-backend
+    2. activate your venv (environment you are using- source .venv-syllabus/bin/activate
+    3. (one-time) ensure deps are installed *in this venv* - pip install fastapi "uvicorn[standard]" pymupdf
+    4. run the API (NOT python app.py) - uvicorn app.app:app --reload --port 8000

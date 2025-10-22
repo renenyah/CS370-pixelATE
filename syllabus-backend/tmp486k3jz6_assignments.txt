@@ -1,0 +1,134 @@
+Total Pages: 14
+PDF Metadata: {'format': 'PDF 1.5', 'title': 'Overleaf Example', 'author': '', 'subject': '', 'keywords': '', 'creator': 'LaTeX with hyperref', 'producer': 'xdvipdfmx (20240305)', 'creationDate': 'D:20250825215201Z', 'modDate': '', 'trapped': '', 'encryption': None}
+
+
+===== Page 2 =====
+includes homework assignments, exams, discussions, and more.   || date_text=—
+will result in 0 points for that portion of the assignment. Additionally,   || date_text=—
+
+===== Page 3 =====
+Approximately 10 assignments, including homework and in-class assignments,   || date_text=—
+Lab Work   || date_text=—
+Final Exam   || date_text=—
+at the end of the semester, the lowest two assignment scores will be   || date_text=—
+– Homework   || date_text=—
+You will have the freedom to choose your groups for these assignments. For the first two homework assignments, you are allowed   || date_text=—
+
+===== Page 4 =====
+to change groups if desired. However, starting from Homework 3   || date_text=—
+(including Homework 3), groups will be fixed. If you do not choose   || date_text=—
+image). Homework will be graded based on completion, accuracy,   || date_text=—
+and clarity of presentation. There will be approximately seven   || date_text=—
+homework assignments due every week, excluding exam weeks and   || date_text=—
+weeks with in-class activities. Homework is due on Thursdays   || date_text=—
+• Lab Work (10%)   || date_text=—
+Attendance at your designated lab session each week is mandatory.   || date_text=—
+material covered in class and to help identify and correct misconceptions early. Lab assignments will be graded based on completion, and   || date_text=—
+each group of 2–3 students must submit one assignment per session.   || date_text=—
+Only students who are physically present during the lab session may participate and be listed on the submitted assign4   || date_text=—
+
+===== Page 5 =====
+ment. If a student is absent, they may not contribute to the lab work   || date_text=—
+instead of submitting a traditional lab report.   || date_text=—
+All lab assignments are due at the end of the lab session. There   || date_text=—
+will be no makeup lab assignments. However, to account for unforeseen   || date_text=—
+absences, the lowest three lab grades will be dropped. This policy is   || date_text=—
+There will be two midterm exams and a final exam. The final exam   || date_text=—
+midterm if you have a conflict or have a valid excuse verified by the   || date_text=—
+
+===== Page 6 =====
+and lab sessions, engaging with the material, asking questions, and contributing to discussions.   || date_text=—
+work, particularly from reading the textbook. Although all topics will be   || date_text=—
+to pose general questions on the Ask the Professor and other discussion   || date_text=—
+course assignment are Emory University Honor System violations. If you are   || date_text=—
+
+===== Page 7 =====
+assignment(s) in question.   || date_text=—
+
+===== Page 8 =====
+You are not permitted to make posted lecture notes, solutions to homework   || date_text=—
+
+===== Page 10 =====
+Problem Set 1: Python (out)   || date_text=Sep 2
+Problem Set 2: Numerical Errors   || date_text=Sep 2
+Problem Set 1 (due)   || date_text=Sep 2
+Sep 2nd 2
+Understanding Error | 4th
+Understanding Error
+Problem Set 1: Python (out)   || date_text=—
+9th 3
+Understanding Error | 11th
+Direct Methods for Linear Systems
+Problem Set 2: Numerical Errors
+(out)
+Problem Set 1 (due)   || date_text=—
+
+===== Page 11 =====
+Problem Set 2 (due)   || date_text=—
+Problem Set 3: Linear Systems   || date_text=—
+Midterm 1: Covers Weeks 1–5   || date_text=Oct 2
+Problem Set 4 (out)   || date_text=Oct 2
+Problem Set 4 (due)   || date_text=Oct 2
+16th 4
+Direct Methods for Linear Systems | 18th
+Direct Methods for Linear Systems
+Problem Set 2 (due)   || date_text=—
+23rd 5
+Direct Methods for Linear Systems | 25th
+Direct Methods for Linear Systems
+Problem Set 3: Linear Systems
+(in-class activity)   || date_text=—
+30th 6
+Curve Fitting | Oct 2nd
+Midterm 1: Covers Weeks 1–5
+Problem Set 4 (out)   || date_text=—
+7th 7
+Curve Fitting | 9th
+Curve Fitting
+Problem Set 4 (due)   || date_text=—
+
+===== Page 12 =====
+Problem Set 5 (in-class activity)   || date_text=—
+Midterm 2: Covers Weeks   || date_text=—
+Problem Set 6 (out)   || date_text=—
+Problem Set 6 (due)   || date_text=Nov 4
+21st 9
+Curve Fitting | 23rd
+Curve Fitting
+Problem Set 5 (in-class activity)   || date_text=—
+28th 10
+Differentiation and Integration | 30th
+Midterm 2: Covers Weeks
+6–10
+Problem Set 6 (out)   || date_text=—
+Nov 4th 11
+Differentiation and Integration | 6th
+Root Finding
+Problem Set 6 (due)   || date_text=—
+
+===== Page 13 =====
+Problem Set 8 (out)   || date_text=—
+Problem Set 7 (in-class activity)   || date_text=—
+Problem Set 9 (out)   || date_text=—
+Problem Set 8 (due)   || date_text=—
+Problem Set 9 (due)   || date_text=Dec 2
+11th 12
+Root Finding | 13th
+Root Finding
+Problem Set 8 (out)
+Problem Set 7 (in-class activity)   || date_text=—
+18th 13
+Univariate Minimization | 20th
+Univariate Minimization
+Problem Set 9 (out)
+Problem Set 8 (due)   || date_text=—
+Dec 2nd 15
+REVIEW | 4th
+REVIEW
+Problem Set 9 (due)   || date_text=—
+
+===== Page 14 =====
+Final Exam: 11:30 AM–2:00   || date_text=—
+9th 16 | 11th
+Final Exam: 11:30 AM–2:00
+AM   || date_text=—

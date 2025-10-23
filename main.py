@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-print("Nyah Rene is taking CS370")
-print("Hi there!")
-=======
 import fitz # This is actually PyMuPDF
 import re # regular expressions to find keywords and date partters
 
@@ -89,4 +85,3 @@ with open(out_txt, "w", encoding="utf-8") as out:
 
 # When the "with" block exits, the file is closed. Print a success message for the user.
 print(f"extracted assignment-related info saved to → {out_txt}")
->>>>>>> Kayla

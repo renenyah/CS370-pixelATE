@@ -1,0 +1,25 @@
+Setup and Installation for OCR
+
+### Tesseract OCR
+ ** must be installed separately from [Tesseract GitHub Releases page](https://github.com/tesseract-ocr/tesseract)
+ ** have to ensure that tesseract is in the correct path. ideal: 'C:\Program Files\Tesseract-OCR' to system's Path environment variable
+
+ ### Python Environment Setup
+ ** creating the environment: in terminal type
+ python -m venv .venv-syllabus
+
+ ** activation step
+ (windows)
+ .\.venc-syllabus\Scripts\Activate
+
+ (macOS)
+source .venv-syllabus/bin/activate
+
+** install dependencies: in terminal type
+pip install -r requirements.txt
+
+## running the OCR processor
+main script 'ocr_processor.py' desinged to accept any image path as a command-line argument
+ **in terminal type: 
+(macOS)
+python app/ocr/ocr_processor.py <then path to image being tested>

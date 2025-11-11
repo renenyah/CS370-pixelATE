@@ -29,7 +29,12 @@ Purpose of the .env:
 
 
 When running the code to access the the API:
-    1. go to your backend folder - cd /Users/kultumlhabaik/Documents/CS370-pixelATE/syllabus-backend
-    2. activate your venv (environment you are using- source .venv-syllabus/bin/activate
-    3. (one-time) ensure deps are installed *in this venv* - pip install fastapi "uvicorn[standard]" pymupdf
-    4. run the API (NOT python app.py) - uvicorn app.app:app --reload --port 8000
+# In the backend folder
+cd ~/Documents/CS370-pixelATE/syllabus-backend
+source .venv-syllabus/bin/activate
+
+# Quick health check
+python -c "import app.llm_repair as L; print('have_gemini:', L.have_gemini()); print('status:', L.gemini_status())"
+
+# Run server
+PYTHONPATH=\"$(pwd)\" uvicorn app.app:app --reload --port 8000

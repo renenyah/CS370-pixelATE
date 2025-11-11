@@ -1,9 +1,20 @@
-fastapi
-uvicorn[standard]
-python-multipart
-pydantic
+# API
+fastapi==0.119.1
+uvicorn[standard]==0.38.0
+python-multipart==0.0.9
+pydantic>=2.5,<3
+
+# PDF
+pymupdf==1.26.5
+
+# Utilities
+httpx>=0.27,<1
+dateparser>=1.2,<2
+python-dotenv>=1.0,<2
+
+# Database (keep for later)
 supabase==2.*
-httpx
-pymupdf
-dateparser
-python-dotenv
+
+# OPTIONAL – only if you’ll use Gemini LLM
+# google-generativeai==0.8.5
+# protobuf>=4.25,<5

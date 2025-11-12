@@ -1,4 +1,6 @@
-.venv/
+.venv-syllabus/
 __pycache__/
-.env
 *.pyc
+.env
+*.txt
+*.csv

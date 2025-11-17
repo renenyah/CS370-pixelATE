@@ -1,88 +1,124 @@
-# app/app.py
-from fastapi import FastAPI, File, UploadFile, Query
-from fastapi.responses import JSONResponse, RedirectResponse
-from pathlib import Path
-import tempfile, io, os
-import fitz  # PyMuPDF
-from .extractor_core import extract_due_dates_from_pdf
-from .llm_repair import have_gemini, repair_due_items
+"""
+FastAPI app exposing:
+- POST /assignments/pdf_upload?use_llm_repair={true|false}
+- POST /assignments/image_upload?use_llm_repair={true|false}
+Both return a unified structure, and the LLM step is optional.
 
-app = FastAPI(title="Syllabus Extractor")
+Run:
+  PYTHONPATH="$(pwd)" uvicorn app.app:app --reload --port 8000
+"""
+
+# app/app.py (top of file)
+from __future__ import annotations
+import os
+import io
+import tempfile
+from typing import Optional
+
+from fastapi import FastAPI, UploadFile, File, Query, HTTPException
+from fastapi.responses import JSONResponse
+
+# ✅ explicit imports from the submodules (no circular/attribute confusion)
+from .pdf_extractor import (
+    extract_assignments_from_pdf,
+    extract_assignments_from_text,  # (if you ever use it directly)
+)
+from .llm_repair import have_gemini, repair_due_items
+from .ocr.ocr_processor import ocr_extract_assignments
+
+
+ALLOWED_PDF = {"application/pdf", "application/x-pdf", "binary/octet-stream"}
+ALLOWED_IMG = {"image/png", "image/jpeg", "image/jpg", "image/tiff", "image/bmp", "image/webp"}
+
+app = FastAPI(title="Syllabus Extractor", version="1.0.0")
+
 
 @app.get("/")
 def root():
     return {"ok": True, "docs": "/docs"}
 
-def _pdf_text_excerpt(pdf_path: Path, max_chars: int = 5000, max_pages: int = 6) -> str:
-    out = []
-    try:
-        with fitz.open(pdf_path) as doc:
-            for i, page in enumerate(doc):
-                if i >= max_pages:
-                    break
-                out.append(page.get_text("text") or "")
-                if sum(len(s) for s in out) >= max_chars:
-                    break
-    except Exception:
-        return ""
-    text = "\n".join(out)
-    return text[:max_chars]
 
-@app.post("/assignments/due_upload")
-async def assignments_due_upload(
+def _llm_if_requested(result: dict, use_llm_repair: bool):
+    """
+    Applies Gemini repair if requested & available. Returns (items, llm_used, llm_error)
+    """
+    items = result.get("items", []) or []
+    excerpt = result.get("text_excerpt", "") or ""
+    meta = {"pdf_title": result.get("pdf_title"), "default_year": result.get("default_year")}
+    if use_llm_repair and items:
+        fixed, used, err = repair_due_items(items, excerpt, meta)
+        return fixed, used, err
+    return items, False, None
+
+
+@app.post("/assignments/pdf_upload")
+async def assignments_pdf_upload(
     file: UploadFile = File(...),
-    use_llm_repair: bool = Query(False, description="Use Gemini to clean/normalize result"),
+    use_llm_repair: bool = Query(False, description="Use Gemini to clean/merge results")
 ):
-    # Save uploaded PDF to a temp path
-    file_bytes = await file.read()
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(file_bytes)
-        tmp_path = Path(tmp.name)
+    if file.content_type not in ALLOWED_PDF and not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
 
     try:
-        # Your existing extractor returns a dict like:
-        # {"status": "ok", "pdf_title": "...", "items": [...], "metadata": {...}}
-        base = extract_due_dates_from_pdf(str(tmp_path))
-        # In case some older version returns a tuple, take the first element
-        if isinstance(base, tuple):
-            base = base[0]
+        # Save to a temp file to hand to fitz
+        with tempfile.NamedTemporaryFile(prefix="syllabus_", suffix=".pdf", delete=False) as tmp:
+            data = await file.read()
+            tmp.write(data)
+            tmp_path = tmp.name
 
-        title = base.get("pdf_title") or ""
-        items = base.get("items", [])
-        metadata = base.get("metadata", {}) or {}
+        base = pdf_extractor.extract_assignments_from_pdf(tmp_path)
+        items, used, err = _llm_if_requested(base, use_llm_repair)
 
-        llm_used = False
-        llm_error = None
-
-        if use_llm_repair:
-            if have_gemini():
-                try:
-                    excerpt = _pdf_text_excerpt(tmp_path)
-                    items = repair_due_items(
-                        items,
-                        pdf_title=title,
-                        pdf_text_excerpt=excerpt,
-                        metadata=metadata,
-                    )
-                    llm_used = True
-                except Exception as e:
-                    llm_error = f"{type(e).__name__}: {e}"
-            else:
-                llm_error = "GEMINI_API_KEY/MODEL missing or library not available"
-
-        resp = {
+        return JSONResponse({
             "status": "ok",
-            "pdf_title": title,
+            "pdf_title": base.get("pdf_title") or file.filename,
             "items": items,
-            "llm_used": llm_used,
-        }
-        if llm_error:
-            resp["llm_error"] = llm_error
-        return JSONResponse(resp)
+            "llm_used": used,
+            **({"llm_error": err} if err else {})
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            os.unlink(tmp_path)  # cleanup
+        except Exception:
+            pass
 
+
+@app.post("/assignments/image_upload")
+async def assignments_image_upload(
+    file: UploadFile = File(...),
+    use_llm_repair: bool = Query(False, description="Use Gemini to clean/merge results")
+):
+    # content-type is flaky in browsers; check extension too
+    ext_ok = file.filename.lower().endswith((".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"))
+    if file.content_type not in ALLOWED_IMG and not ext_ok:
+        raise HTTPException(status_code=415, detail=f"Unsupported file type: {file.content_type}")
+
+    try:
+        # Save temp image
+        suffix = os.path.splitext(file.filename)[1] or ".png"
+        with tempfile.NamedTemporaryFile(prefix="syllabus_img_", suffix=suffix, delete=False) as tmp:
+            data = await file.read()
+            tmp.write(data)
+            tmp_path = tmp.name
+
+        # OCR -> extractor
+        base = extract_assignments_from_pdf(tmp_path)
+        items, used, err = _llm_if_requested(base, use_llm_repair)
+
+        return JSONResponse({
+            "status": "ok",
+            "pdf_title": base.get("pdf_title") or "Image Upload",
+            "items": items,
+            "llm_used": used,
+            **({"llm_error": err} if err else {})
+        })
+    except Exception as e:
+        # bubble the traceback message
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         try:
             os.unlink(tmp_path)
         except Exception:
             pass
-

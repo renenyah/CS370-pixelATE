@@ -1,2 +1,0 @@
-# CS370-pixelATE
- 

@@ -1,6 +1,11 @@
 // app/_layout.tsx
 import React, { useState } from "react";
-import { View, TouchableOpacity, Text, StyleSheet } from "react-native";
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+} from "react-native";
 import { Stack, useRouter, usePathname } from "expo-router";
 import {
   Home as HomeIcon,
@@ -10,6 +15,7 @@ import {
   Plus,
 } from "lucide-react-native";
 import PlusMenu from "../components/PlusMenu";
+import { AssignmentsProvider } from "../components/AssignmentsContext";
 
 export default function RootLayout() {
   const router = useRouter();
@@ -17,64 +23,67 @@ export default function RootLayout() {
   const [plusOpen, setPlusOpen] = useState(false);
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Main stack for all screens */}
-      <Stack screenOptions={{ headerShown: false }} />
+    <AssignmentsProvider>
+      <View style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false }} />
 
-      {/* Floating + menu */}
-      {plusOpen && <PlusMenu onClose={() => setPlusOpen(false)} />}
+        {plusOpen && (
+          <PlusMenu onClose={() => setPlusOpen(false)} />
+        )}
 
-      {/* Bottom nav bar */}
-      <View style={styles.navBar}>
-        <NavItem
-          label="Home"
-          Icon={HomeIcon}
-          active={pathname === "/" || pathname === "/index"}
-          onPress={() => {
-            setPlusOpen(false);
-            router.push("/");
-          }}
-        />
+        <View style={styles.navBar}>
+          <NavItem
+            label="Home"
+            Icon={HomeIcon}
+            active={
+              pathname === "/" || pathname === "/index"
+            }
+            onPress={() => {
+              setPlusOpen(false);
+              router.push("/");
+            }}
+          />
 
-        <NavItem
-          label="Classes"
-          Icon={FolderIcon}
-          active={pathname === "/classes"}
-          onPress={() => {
-            setPlusOpen(false);
-            router.push("/classes");
-          }}
-        />
+          <NavItem
+            label="Classes"
+            Icon={FolderIcon}
+            active={pathname === "/classes"}
+            onPress={() => {
+              setPlusOpen(false);
+              router.push("/classes");
+            }}
+          />
 
-        <TouchableOpacity
-          style={styles.plusButton}
-          activeOpacity={0.9}
-          onPress={() => setPlusOpen((prev) => !prev)}
-        >
-          <Plus size={28} color="#fff" />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.plusButton}
+            activeOpacity={0.9}
+            onPress={() => setPlusOpen((prev) => !prev)}
+          >
+            <Plus size={28} color="#fff" />
+          </TouchableOpacity>
 
-        <NavItem
-          label="Calendar"
-          Icon={CalendarIcon}
-          active={pathname === "/calendar"}
-          onPress={() => {
-            setPlusOpen(false);
-            router.push("/calendar");
-          }}
-        />
+          <NavItem
+            label="Calendar"
+            Icon={CalendarIcon}
+            active={pathname === "/calendar"}
+            onPress={() => {
+              setPlusOpen(false);
+              router.push("/calendar");
+            }}
+          />
 
-        <NavItem
-          label="Profile"
-          Icon={UserIcon}
-          active={pathname === "/profile"}
-          onPress={() => {
-            setPlusOpen(false);
-            router.push("/profile");
-          }}
-        />
+          <NavItem
+            label="Profile"
+            Icon={UserIcon}
+            active={pathname === "/profile"}
+            onPress={() => {
+              setPlusOpen(false);
+              router.push("/profile");
+            }}
+          />
+        </View>
       </View>
-    </View>
+    </AssignmentsProvider>
   );
 }
 
@@ -89,7 +98,12 @@ function NavItem({ label, Icon, active, onPress }: NavItemProps) {
   return (
     <TouchableOpacity style={styles.navItem} onPress={onPress}>
       <Icon size={24} color={active ? "#7C3AED" : "#E5E7EB"} />
-      <Text style={[styles.navText, active && styles.navTextActive]}>
+      <Text
+        style={[
+          styles.navText,
+          active && styles.navTextActive,
+        ]}
+      >
         {label}
       </Text>
     </TouchableOpacity>

@@ -1,5 +1,9 @@
 // app/calendar.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   View,
   Text,
@@ -7,17 +11,34 @@ import {
   ScrollView,
   TouchableOpacity,
 } from "react-native";
-import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import {
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react-native";
+import {
+  useAssignments,
+  isSameISO,
+} from "../components/AssignmentsContext";
 
 type ViewMode = "month" | "week" | "day";
 
-const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const weekdayLabels = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
 export default function CalendarScreen() {
+  const { assignments } = useAssignments();
+
   const [now, setNow] = useState(new Date());
   const [view, setView] = useState<ViewMode>("month");
   const [cursor, setCursor] = useState<Date>(() => {
@@ -25,10 +46,14 @@ export default function CalendarScreen() {
     d.setDate(1);
     return d;
   });
-  const [selectedISO, setSelectedISO] = useState<string>(todayISO());
+  const [selectedISO, setSelectedISO] =
+    useState<string>(todayISO());
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60 * 1000);
+    const id = setInterval(
+      () => setNow(new Date()),
+      60 * 1000
+    );
     return () => clearInterval(id);
   }, []);
 
@@ -54,37 +79,47 @@ export default function CalendarScreen() {
 
   const monthGrid = useMemo(() => {
     const year = cursor.getFullYear();
-    const month = cursor.getMonth(); // 0-based
+    const month = cursor.getMonth();
     const first = new Date(year, month, 1);
     const startDay = first.getDay(); // 0–6
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const daysInMonth = new Date(
+      year,
+      month + 1,
+      0
+    ).getDate();
 
     const cells: (string | null)[] = [];
 
-    // leading blanks
     for (let i = 0; i < startDay; i++) cells.push(null);
 
-    // all days
     for (let day = 1; day <= daysInMonth; day++) {
       const d = new Date(year, month, day);
       const iso = d.toISOString().slice(0, 10);
       cells.push(iso);
     }
 
-    // trailing blanks to complete rows of 7
     while (cells.length % 7 !== 0) cells.push(null);
-
     return cells;
   }, [cursor]);
 
   const selectedDateLabel = useMemo(
     () =>
-      new Date(selectedISO).toLocaleDateString([], {
+      new Date(
+        selectedISO
+      ).toLocaleDateString([], {
         weekday: "long",
         month: "long",
         day: "numeric",
       }),
     [selectedISO]
+  );
+
+  const dayAssignments = useMemo(
+    () =>
+      assignments.filter((a) =>
+        isSameISO(a.dueISO || null, selectedISO)
+      ),
+    [assignments, selectedISO]
   );
 
   return (
@@ -94,7 +129,7 @@ export default function CalendarScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.welcome}>Welcome! 📚</Text>
+        <Text style={styles.welcome}>Calendar 🗓️</Text>
         <Text style={styles.sub}>
           {timeLabel} • {dateLabel}
         </Text>
@@ -122,7 +157,6 @@ export default function CalendarScreen() {
       {/* MONTH VIEW */}
       {view === "month" && (
         <>
-          {/* Month header row */}
           <View style={styles.monthHeaderRow}>
             <TouchableOpacity
               style={styles.monthNavBtn}
@@ -132,10 +166,15 @@ export default function CalendarScreen() {
                 setCursor(d);
               }}
             >
-              <ChevronLeft size={18} color="#7C3AED" />
+              <ChevronLeft
+                size={18}
+                color="#7C3AED"
+              />
             </TouchableOpacity>
 
-            <Text style={styles.monthLabel}>{monthLabel}</Text>
+            <Text style={styles.monthLabel}>
+              {monthLabel}
+            </Text>
 
             <TouchableOpacity
               style={styles.monthNavBtn}
@@ -145,28 +184,41 @@ export default function CalendarScreen() {
                 setCursor(d);
               }}
             >
-              <ChevronRight size={18} color="#7C3AED" />
+              <ChevronRight
+                size={18}
+                color="#7C3AED"
+              />
             </TouchableOpacity>
           </View>
 
-          {/* Weekday labels */}
           <View style={styles.weekdayRow}>
             {weekdayLabels.map((w) => (
-              <Text key={w} style={styles.weekdayText}>
+              <Text
+                key={w}
+                style={styles.weekdayText}
+              >
                 {w}
               </Text>
             ))}
           </View>
 
-          {/* Calendar grid */}
           <View style={styles.grid}>
             {monthGrid.map((iso, idx) => {
               if (!iso) {
-                return <View key={`blank-${idx}`} style={styles.cell} />;
+                return (
+                  <View
+                    key={`blank-${idx}`}
+                    style={styles.cell}
+                  />
+                );
               }
 
-              const day = Number(iso.slice(-2));
+              const dayNum = Number(iso.slice(-2));
               const isSelected = iso === selectedISO;
+              const hasAssignments =
+                assignments.filter((a) =>
+                  isSameISO(a.dueISO || null, iso)
+                ).length > 0;
 
               return (
                 <TouchableOpacity
@@ -181,17 +233,22 @@ export default function CalendarScreen() {
                   <View
                     style={[
                       styles.dayCard,
-                      isSelected && styles.dayCardSelected,
+                      isSelected &&
+                        styles.dayCardSelected,
                     ]}
                   >
                     <Text
                       style={[
                         styles.dayText,
-                        isSelected && styles.dayTextSelected,
+                        isSelected &&
+                          styles.dayTextSelected,
                       ]}
                     >
-                      {day}
+                      {dayNum}
                     </Text>
+                    {hasAssignments && (
+                      <View style={styles.dayDot} />
+                    )}
                   </View>
                 </TouchableOpacity>
               );
@@ -200,29 +257,60 @@ export default function CalendarScreen() {
         </>
       )}
 
-      {/* WEEK VIEW – simple placeholder using selected date's week */}
+      {/* WEEK VIEW (simple placeholder but uses selected date) */}
       {view === "week" && (
         <View style={styles.placeholderBox}>
-          <Text style={styles.placeholderTitle}>Week View</Text>
-          <Text style={styles.placeholderText}>
-            Week view will show assignments grouped by day. For now this is a
-            placeholder with the selected date:
+          <Text style={styles.placeholderTitle}>
+            Week View
           </Text>
-          <Text style={styles.highlight}>{selectedDateLabel}</Text>
+          <Text style={styles.placeholderText}>
+            This view will show assignments grouped by day for
+            this week. For now, it highlights the selected date:
+          </Text>
+          <Text style={styles.highlight}>
+            {selectedDateLabel}
+          </Text>
         </View>
       )}
 
       {/* DAY VIEW */}
       {view === "day" && (
-        <View style={styles.placeholderBox}>
-          <Text style={styles.placeholderTitle}>Assignments for</Text>
-          <Text style={[styles.highlight, { marginBottom: 10 }]}>
+        <View style={styles.dayBox}>
+          <Text style={styles.dayTitle}>
             {selectedDateLabel}
           </Text>
-          <Text style={styles.placeholderText}>
-            No assignments yet for this day. In the future you’ll see a list of
-            assignments due here.
-          </Text>
+          {dayAssignments.length === 0 ? (
+            <Text style={styles.dayEmpty}>
+              No assignments due on this day.
+            </Text>
+          ) : (
+            <View style={{ gap: 10, marginTop: 10 }}>
+              {dayAssignments.map((a) => (
+                <View
+                  key={a.id}
+                  style={styles.taskCard}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.taskTitle}>
+                      {a.title}
+                    </Text>
+                    {!!a.course && (
+                      <Text
+                        style={styles.taskCourse}
+                      >
+                        {a.course}
+                      </Text>
+                    )}
+                    {!!a.type && (
+                      <Text style={styles.taskType}>
+                        {a.type}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       )}
     </ScrollView>
@@ -242,10 +330,16 @@ function ViewToggleChip({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.9}
-      style={[styles.viewChip, active && styles.viewChipActive]}
+      style={[
+        styles.viewChip,
+        active && styles.viewChipActive,
+      ]}
     >
       <Text
-        style={[styles.viewChipText, active && styles.viewChipTextActive]}
+        style={[
+          styles.viewChipText,
+          active && styles.viewChipTextActive,
+        ]}
       >
         {label}
       </Text>
@@ -273,7 +367,6 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     fontSize: 14,
   },
-
   viewToggleRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -300,7 +393,6 @@ const styles = StyleSheet.create({
   viewChipTextActive: {
     color: "#FFFFFF",
   },
-
   monthHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -321,7 +413,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#111827",
   },
-
   weekdayRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -335,7 +426,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
   },
-
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -354,6 +444,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
   },
   dayCardSelected: {
     borderWidth: 2,
@@ -367,7 +458,15 @@ const styles = StyleSheet.create({
   dayTextSelected: {
     color: "#7C3AED",
   },
-
+  dayDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#7C3AED",
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+  },
   placeholderBox: {
     marginTop: 24,
     backgroundColor: "#FFFFFF",
@@ -389,5 +488,40 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#7C3AED",
     fontSize: 16,
+  },
+  dayBox: {
+    marginTop: 18,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+  },
+  dayTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  dayEmpty: {
+    marginTop: 8,
+    color: "#6B7280",
+  },
+  taskCard: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 14,
+    padding: 12,
+  },
+  taskTitle: {
+    fontWeight: "700",
+    color: "#111827",
+  },
+  taskCourse: {
+    color: "#6B7280",
+    marginTop: 2,
+    fontSize: 13,
+  },
+  taskType: {
+    color: "#6D28D9",
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "600",
   },
 });

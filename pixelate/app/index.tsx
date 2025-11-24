@@ -3,57 +3,34 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
-  TouchableOpacity,
+  ScrollView,
 } from "react-native";
-import { Clock } from "lucide-react-native";
-
-type CourseFilter = "All" | string;
-
-type Assignment = {
-  id: string;
-  title: string;
-  course: string;
-  dueISO: string; // YYYY-MM-DD
-};
-
-const MOCK_ASSIGNMENTS: Assignment[] = [
-  // leave empty or add sample assignments here
-  // {
-  //   id: "1",
-  //   title: "Essay Draft",
-  //   course: "Cs 370",
-  //   dueISO: "2025-11-23",
-  // },
-];
-
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function isToday(iso: string) {
-  return iso === todayISO();
-}
+import {
+  Clock,
+  AlertCircle,
+  ArrowRight,
+} from "lucide-react-native";
+import {
+  useAssignments,
+  todayISO,
+  isSameISO,
+  within7Days,
+  isOverdue,
+} from "../components/AssignmentsContext";
 
 export default function HomeScreen() {
+  const { assignments } = useAssignments();
   const [now, setNow] = useState(new Date());
-  const [selectedCourse, setSelectedCourse] = useState<CourseFilter>("All");
-
-  // fake “courses” from assignments – you’ll replace this with real data later
-  const courses: string[] = useMemo(() => {
-    const s = new Set<string>();
-    MOCK_ASSIGNMENTS.forEach((a) => s.add(a.course));
-    // for design demo / screenshot – add a couple example courses:
-    if (s.size === 0) {
-      s.add("Cs 370");
-      s.add("Rome sketchbook");
-    }
-    return Array.from(s);
-  }, []);
+  const [todayCourse, setTodayCourse] = useState<string | "All">(
+    "All"
+  );
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60 * 1000);
+    const id = setInterval(
+      () => setNow(new Date()),
+      60 * 1000
+    );
     return () => clearInterval(id);
   }, []);
 
@@ -68,15 +45,44 @@ export default function HomeScreen() {
     day: "numeric",
   });
 
-  const assignmentsToday = useMemo(() => {
-    const base = MOCK_ASSIGNMENTS.filter((a) => isToday(a.dueISO));
-    if (selectedCourse === "All") return base;
-    return base.filter((a) => a.course === selectedCourse);
-  }, [selectedCourse]);
+  const courses = useMemo(() => {
+    const s = new Set<string>();
+    assignments.forEach((a) => {
+      if (a.course) s.add(a.course);
+    });
+    return Array.from(s);
+  }, [assignments]);
 
-  // For now keep counts simple – later you’ll compute from real data
-  const upcomingCount = 0;
-  const overdueCount = 0;
+  const dueTodayAll = useMemo(
+    () =>
+      assignments.filter((a) =>
+        isSameISO(a.dueISO || null, todayISO)
+      ),
+    [assignments]
+  );
+
+  const dueToday = useMemo(() => {
+    if (todayCourse === "All") return dueTodayAll;
+    return dueTodayAll.filter(
+      (a) => a.course === todayCourse
+    );
+  }, [dueTodayAll, todayCourse]);
+
+  const upcoming7 = useMemo(
+    () =>
+      assignments.filter((a) =>
+        within7Days(a.dueISO || null)
+      ),
+    [assignments]
+  );
+
+  const overdue = useMemo(
+    () =>
+      assignments.filter((a) =>
+        isOverdue(a.dueISO || null)
+      ),
+    [assignments]
+  );
 
   return (
     <ScrollView
@@ -91,93 +97,218 @@ export default function HomeScreen() {
         </Text>
       </View>
 
-      {/* Stats Row */}
+      {/* Stats */}
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <View style={styles.statHeaderRow}>
-            <Text style={styles.statTitle}>Upcoming (Next 7 Days)</Text>
+          <View style={styles.statIconWrap}>
+            <Clock size={20} color="#4F46E5" />
           </View>
-          <View style={styles.statNumberRow}>
-            <Clock size={18} color="#6366F1" />
-            <Text style={[styles.statNumber, { color: "#111827" }]}>
-              {upcomingCount}
-            </Text>
-          </View>
+          <Text style={styles.statTitle}>
+            Upcoming (Next 7 Days)
+          </Text>
+          <Text
+            style={[
+              styles.statNumber,
+              { color: "#4F46E5" },
+            ]}
+          >
+            {upcoming7.length}
+          </Text>
         </View>
 
         <View style={styles.statCard}>
-          <View style={styles.statHeaderRow}>
-            <Text style={styles.statTitle}>Overdue</Text>
+          <View
+            style={[
+              styles.statIconWrap,
+              { backgroundColor: "#FEE2E2" },
+            ]}
+          >
+            <AlertCircle size={20} color="#DC2626" />
           </View>
-          <View style={styles.statNumberRow}>
-            <Clock size={18} color="#EF4444" />
-            <Text style={[styles.statNumber, { color: "#111827" }]}>
-              {overdueCount}
-            </Text>
-          </View>
+          <Text style={styles.statTitle}>Overdue</Text>
+          <Text
+            style={[
+              styles.statNumber,
+              { color: "#DC2626" },
+            ]}
+          >
+            {overdue.length}
+          </Text>
         </View>
       </View>
 
-      {/* Today’s Assignments Card */}
-      <View style={styles.todayCard}>
-        <Text style={styles.todayTitle}>Today’s Assignments</Text>
+      {/* Today */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>
+          Today’s Assignments
+        </Text>
 
-        {/* Filter chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={{ marginTop: 12, marginBottom: 8 }}
+          style={{ marginBottom: 12 }}
         >
-          <FilterChip
+          <Chip
             label="All"
-            active={selectedCourse === "All"}
-            onPress={() => setSelectedCourse("All")}
+            active={todayCourse === "All"}
+            onPress={() => setTodayCourse("All")}
           />
-          {courses.map((course) => (
-            <FilterChip
-              key={course}
-              label={course}
-              active={selectedCourse === course}
-              onPress={() => setSelectedCourse(course)}
+          {courses.map((c) => (
+            <Chip
+              key={c}
+              label={c}
+              active={todayCourse === c}
+              onPress={() => setTodayCourse(c)}
             />
           ))}
         </ScrollView>
 
-        {/* Today list / empty state */}
-        {assignmentsToday.length === 0 ? (
-          <Text style={styles.emptyToday}>No assignments due today 🎉</Text>
+        {dueToday.length === 0 ? (
+          <EmptyCard text="No assignments due today 🎉" />
         ) : (
-          assignmentsToday.map((a) => (
-            <View key={a.id} style={styles.assignmentRow}>
-              <Text style={styles.assignmentTitle}>{a.title}</Text>
-              <Text style={styles.assignmentCourse}>{a.course}</Text>
-            </View>
-          ))
+          <View style={{ gap: 10 }}>
+            {dueToday.map((a) => (
+              <AssignmentCard key={a.id} assignment={a} />
+            ))}
+          </View>
         )}
       </View>
+
+      {/* Upcoming section */}
+      <View style={styles.section}>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>
+            Upcoming
+          </Text>
+          <Text style={styles.sectionSub}>
+            Next 7 days
+          </Text>
+        </View>
+
+        {upcoming7.length === 0 ? (
+          <EmptyCard text="Nothing coming up this week." />
+        ) : (
+          <View style={{ gap: 10 }}>
+            {upcoming7
+              .slice()
+              .sort(
+                (a, b) =>
+                  (a.dueISO || "").localeCompare(
+                    b.dueISO || ""
+                  )
+              )
+              .map((a) => (
+                <AssignmentCard key={a.id} assignment={a} />
+              ))}
+          </View>
+        )}
+      </View>
+
+      {/* Overdue section */}
+      {overdue.length > 0 && (
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>
+              Overdue
+            </Text>
+            <View style={styles.badgeDanger}>
+              <Text style={styles.badgeDangerText}>
+                Needs attention
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ gap: 10 }}>
+            {overdue
+              .slice()
+              .sort(
+                (a, b) =>
+                  (a.dueISO || "").localeCompare(
+                    b.dueISO || ""
+                  )
+              )
+              .map((a) => (
+                <AssignmentCard key={a.id} assignment={a} />
+              ))}
+          </View>
+        </View>
+      )}
     </ScrollView>
   );
 }
 
-function FilterChip({
+function Chip({
   label,
   active,
   onPress,
 }: {
   label: string;
-  active: boolean;
+  active?: boolean;
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.9}
-      style={[styles.chip, active && styles.chipActive]}
-    >
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>
+    <View style={{ marginRight: 8 }}>
+      <Text
+        onPress={onPress}
+        style={[
+          styles.chip,
+          active && styles.chipActive,
+        ]}
+      >
         {label}
       </Text>
-    </TouchableOpacity>
+    </View>
+  );
+}
+
+function EmptyCard({ text }: { text: string }) {
+  return (
+    <View style={styles.emptyCard}>
+      <Text style={styles.emptyText}>{text}</Text>
+    </View>
+  );
+}
+
+function AssignmentCard({
+  assignment,
+}: {
+  assignment: any;
+}) {
+  const dueLabel = assignment.dueISO
+    ? new Date(
+        assignment.dueISO
+      ).toLocaleDateString()
+    : null;
+
+  let dotColor = "#10B981";
+  if (assignment.priority === "high") dotColor = "#EF4444";
+  else if (assignment.priority === "medium")
+    dotColor = "#F59E0B";
+
+  return (
+    <View style={styles.card}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cardTitle}>
+          {assignment.title}
+        </Text>
+        {!!assignment.course && (
+          <Text style={styles.cardCourse}>
+            {assignment.course}
+          </Text>
+        )}
+        {!!dueLabel && (
+          <Text style={styles.cardMeta}>
+            Due {dueLabel}
+          </Text>
+        )}
+      </View>
+      <View style={styles.cardRight}>
+        <View
+          style={[styles.dot, { backgroundColor: dotColor }]}
+        />
+        <ArrowRight size={18} color="#9CA3AF" />
+      </View>
+    </View>
   );
 }
 
@@ -201,101 +332,126 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     fontSize: 14,
   },
-
-  // stats
   statsRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     gap: 12,
+    marginBottom: 18,
   },
   statCard: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 14,
     shadowColor: "#000",
     shadowOpacity: 0.06,
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 8,
-    elevation: 2,
+    shadowRadius: 10,
   },
-  statHeaderRow: {
-    marginBottom: 4,
+  statIconWrap: {
+    backgroundColor: "#E0E7FF",
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
   },
   statTitle: {
-    fontSize: 13,
+    color: "#111827",
     fontWeight: "600",
-    color: "#4B5563",
-  },
-  statNumberRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 4,
+    marginBottom: 6,
+    fontSize: 13,
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "800",
   },
-
-  // today's assignments card
-  todayCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    marginTop: 20,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 6,
-    elevation: 1,
+  section: {
+    marginBottom: 20,
   },
-  todayTitle: {
-    fontSize: 18,
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: "800",
     color: "#111827",
+    marginBottom: 10,
   },
-
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  sectionSub: {
+    color: "#6B7280",
+    fontSize: 13,
+  },
+  badgeDanger: {
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  badgeDangerText: {
+    color: "#B91C1C",
+    fontWeight: "700",
+    fontSize: 11,
+  },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "#E5E7EB",
     backgroundColor: "#FFFFFF",
-    marginRight: 8,
+    color: "#111827",
+    fontWeight: "600",
+    fontSize: 13,
   },
   chipActive: {
     backgroundColor: "#7C3AED",
+    color: "#FFFFFF",
     borderColor: "#7C3AED",
   },
-  chipText: {
-    fontWeight: "600",
-    color: "#111827",
-    fontSize: 14,
+  emptyCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  chipTextActive: {
-    color: "#FFFFFF",
-  },
-
-  emptyToday: {
-    marginTop: 8,
+  emptyText: {
     color: "#6B7280",
-    fontSize: 14,
   },
-
-  assignmentRow: {
-    marginTop: 10,
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
-  assignmentTitle: {
+  cardTitle: {
     fontWeight: "700",
     color: "#111827",
+    fontSize: 15,
   },
-  assignmentCourse: {
+  cardCourse: {
     color: "#6B7280",
-    fontSize: 13,
     marginTop: 2,
+    fontSize: 13,
+  },
+  cardMeta: {
+    color: "#6D28D9",
+    marginTop: 2,
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  cardRight: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
 });

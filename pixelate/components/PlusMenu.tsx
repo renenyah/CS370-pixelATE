@@ -9,6 +9,7 @@ import {
   TextInput,
   Switch,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import {
   Upload,
@@ -18,34 +19,224 @@ import {
   Image as ImageIcon,
   Paperclip,
 } from "lucide-react-native";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
+import {
+  useAssignments,
+  Draft,
+  safeISO,
+} from "./AssignmentsContext";
+import DraftEditorModal from "./DraftEditorModal";
 
 type Props = {
   onClose: () => void;
 };
 
+type DueItem = {
+  title: string;
+  due_date_raw?: string;
+  due_date_iso?: string;
+  page?: number | null;
+  source?: string;
+  course?: string;
+};
+
+type ApiResponse = {
+  status: "ok" | "error";
+  message?: string;
+  pdf_name?: string;
+  image_name?: string;
+  course_name?: string;
+  items?: DueItem[];
+  llm_used?: boolean;
+  llm_error?: string | null;
+};
+
+const API_BASE = "http://172.24.227.154:8000".replace(/\/+$/, "");
+
 export default function PlusMenu({ onClose }: Props) {
+  const { addAssignmentsFromDrafts } = useAssignments();
+
   const [uploadOpen, setUploadOpen] = useState(false);
   const [addClassOpen, setAddClassOpen] = useState(false);
   const [addAssignmentOpen, setAddAssignmentOpen] = useState(false);
 
-  // local UI state for upload sheet (purely cosmetic right now)
   const [aiRepair, setAiRepair] = useState(false);
   const [courseName, setCourseName] = useState("");
   const [syllabusText, setSyllabusText] = useState("");
+  const [parsing, setParsing] = useState(false);
+
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
 
   const closeAll = () => {
     setUploadOpen(false);
     setAddClassOpen(false);
     setAddAssignmentOpen(false);
+    setDraftsOpen(false);
+    setDrafts([]);
+    setParsing(false);
     onClose();
   };
 
-  const handleParse = () => {
-    Alert.alert(
-      "Parse Syllabus",
-      "In the next step this will send your syllabus to the backend and extract assignments."
-    );
-    closeAll();
+  const buildDraftsFromItems = (
+    resp: ApiResponse,
+    items: DueItem[]
+  ) => {
+    const backendCourse = resp.course_name || "";
+    if (!items.length) {
+      Alert.alert(
+        "No assignments found",
+        "Try toggling AI Repair or a different file / text."
+      );
+      return;
+    }
+
+    const ds: Draft[] = items.map((it, idx) => ({
+      id: `d_${idx}_${Math.random().toString(36).slice(2, 10)}`,
+      title: it.title || "Untitled",
+      course: courseName || it.course || backendCourse || "",
+      type: "Assignment",
+      dueISO: safeISO(
+        it.due_date_iso || it.due_date_raw || null
+      ),
+      description: "",
+    }));
+
+    setDrafts(ds);
+    setDraftsOpen(true);
+  };
+
+  const handleUploadPdf = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["application/pdf"],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+
+      setParsing(true);
+      const formData = new FormData();
+      formData.append(
+        "file",
+        {
+          uri: asset.uri,
+          name: asset.name || "syllabus.pdf",
+          type: asset.mimeType || "application/pdf",
+        } as any
+      );
+
+      const res = await fetch(
+        `${API_BASE}/assignments/pdf?use_llm=${String(
+          aiRepair
+        )}`,
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
+      const json = (await res.json()) as ApiResponse;
+
+      if (json.status !== "ok") {
+        Alert.alert("Upload failed", json.message || "Server error");
+        return;
+      }
+
+      buildDraftsFromItems(json, json.items || []);
+      setUploadOpen(false);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || String(e));
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleUploadImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1,
+      });
+      if (result.canceled || !result.assets?.[0]) return;
+      const asset = result.assets[0];
+
+      setParsing(true);
+      const formData = new FormData();
+      formData.append(
+        "file",
+        {
+          uri: asset.uri,
+          name: asset.fileName || "image.jpg",
+          type: asset.mimeType || "image/jpeg",
+        } as any
+      );
+
+      const url = `${API_BASE}/assignments/image?preprocess=${encodeURIComponent(
+        "screenshot"
+      )}&use_llm=${String(aiRepair)}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        body: formData,
+      });
+      const json = (await res.json()) as ApiResponse;
+
+      if (json.status !== "ok") {
+        Alert.alert("Upload failed", json.message || "Server error");
+        return;
+      }
+
+      buildDraftsFromItems(json, json.items || []);
+      setUploadOpen(false);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || String(e));
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleParseText = async () => {
+    if (!syllabusText.trim()) {
+      Alert.alert(
+        "Add some text",
+        "Paste syllabus text before parsing."
+      );
+      return;
+    }
+
+    try {
+      setParsing(true);
+      const res = await fetch(`${API_BASE}/assignments/text`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: syllabusText }),
+      });
+      const json = (await res.json()) as ApiResponse;
+
+      if (json.status !== "ok") {
+        Alert.alert("Parse failed", json.message || "Server error");
+        return;
+      }
+
+      buildDraftsFromItems(json, json.items || []);
+      setUploadOpen(false);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message || String(e));
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleSaveDrafts = () => {
+    if (!drafts.length) {
+      setDraftsOpen(false);
+      return;
+    }
+    addAssignmentsFromDrafts(drafts);
+    setDrafts([]);
+    setDraftsOpen(false);
+    onClose();
   };
 
   return (
@@ -91,7 +282,6 @@ export default function PlusMenu({ onClose }: Props) {
       >
         <View style={styles.sheetOverlay}>
           <View style={styles.sheet}>
-            {/* Header */}
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Upload Syllabus</Text>
               <TouchableOpacity onPress={closeAll}>
@@ -100,34 +290,35 @@ export default function PlusMenu({ onClose }: Props) {
             </View>
 
             <Text style={styles.sheetSub}>
-              Paste your syllabus text or upload a file. We’ll extract
-              assignments and dates.
+              Paste your syllabus text or upload a file. We’ll
+              extract assignments and due dates. Toggle AI Repair to
+              let the model clean up messy dates.
             </Text>
 
-            {/* AI Repair toggle */}
             <View style={styles.aiRow}>
               <Switch
                 value={aiRepair}
                 onValueChange={setAiRepair}
-                trackColor={{ false: "#E5E7EB", true: "#7C3AED" }}
+                trackColor={{
+                  false: "#E5E7EB",
+                  true: "#7C3AED",
+                }}
                 thumbColor="#FFFFFF"
               />
               <Text style={styles.aiLabel}>AI Repair</Text>
             </View>
 
-            {/* Course name */}
             <Text style={styles.label}>
               Course Name (optional — we’ll try to detect it)
             </Text>
             <TextInput
               style={styles.input}
-              placeholder="e.g., CS 326"
+              placeholder="e.g., CS 370"
               placeholderTextColor="#9CA3AF"
               value={courseName}
               onChangeText={setCourseName}
             />
 
-            {/* Syllabus text */}
             <Text style={styles.label}>Syllabus Text</Text>
             <TextInput
               style={[styles.input, styles.multiline]}
@@ -139,17 +330,11 @@ export default function PlusMenu({ onClose }: Props) {
               onChangeText={setSyllabusText}
             />
 
-            {/* File buttons */}
             <View style={styles.fileButtons}>
               <TouchableOpacity
                 style={styles.fileBtn}
                 activeOpacity={0.9}
-                onPress={() =>
-                  Alert.alert(
-                    "Upload PDF",
-                    "Here you’ll open the file picker to select a PDF."
-                  )
-                }
+                onPress={handleUploadPdf}
               >
                 <View style={styles.fileIconCircle}>
                   <Paperclip size={18} color="#111827" />
@@ -157,7 +342,7 @@ export default function PlusMenu({ onClose }: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fileTitle}>Upload PDF</Text>
                   <Text style={styles.fileSubtitle}>
-                    Choose a PDF syllabus from your device
+                    Choose a PDF syllabus
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -165,12 +350,7 @@ export default function PlusMenu({ onClose }: Props) {
               <TouchableOpacity
                 style={styles.fileBtn}
                 activeOpacity={0.9}
-                onPress={() =>
-                  Alert.alert(
-                    "Upload Image",
-                    "Here you’ll open the gallery or camera to select an image."
-                  )
-                }
+                onPress={handleUploadImage}
               >
                 <View style={styles.fileIconCircle}>
                   <ImageIcon size={18} color="#111827" />
@@ -178,18 +358,18 @@ export default function PlusMenu({ onClose }: Props) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.fileTitle}>Upload Image</Text>
                   <Text style={styles.fileSubtitle}>
-                    Use a photo or screenshot of your syllabus
+                    Use a screenshot or photo
                   </Text>
                 </View>
               </TouchableOpacity>
             </View>
 
-            {/* Footer buttons */}
             <View style={styles.actionsRow}>
               <TouchableOpacity
                 style={styles.cancelBtn}
                 activeOpacity={0.9}
                 onPress={closeAll}
+                disabled={parsing}
               >
                 <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -197,14 +377,31 @@ export default function PlusMenu({ onClose }: Props) {
               <TouchableOpacity
                 style={styles.primaryBtn}
                 activeOpacity={0.9}
-                onPress={handleParse}
+                onPress={handleParseText}
+                disabled={parsing}
               >
-                <Text style={styles.primaryText}>Parse Syllabus</Text>
+                {parsing ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryText}>
+                    Parse Syllabus
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      {/* ========= Draft Editor ========= */}
+      <DraftEditorModal
+        visible={draftsOpen}
+        drafts={drafts}
+        onChangeDrafts={setDrafts}
+        onClose={() => setDraftsOpen(false)}
+        onStartOver={() => setDrafts([])}
+        onSave={handleSaveDrafts}
+      />
 
       {/* ========= Add Class placeholder ========= */}
       <Modal
@@ -217,7 +414,8 @@ export default function PlusMenu({ onClose }: Props) {
           <View style={styles.simpleBox}>
             <Text style={styles.simpleTitle}>Add Class</Text>
             <Text style={styles.simpleText}>
-              Later, this will let you create a class with a color and name.
+              Later, this will let you create a class with a color and
+              name. For now this is a placeholder.
             </Text>
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -241,8 +439,8 @@ export default function PlusMenu({ onClose }: Props) {
           <View style={styles.simpleBox}>
             <Text style={styles.simpleTitle}>Add Assignment</Text>
             <Text style={styles.simpleText}>
-              Later, this will let you manually enter an assignment with a due
-              date.
+              Later, this will let you manually enter a single
+              assignment with a due date and class.
             </Text>
             <TouchableOpacity
               style={styles.primaryBtn}
@@ -259,7 +457,6 @@ export default function PlusMenu({ onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  // floating menu
   overlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.18)",
@@ -293,7 +490,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  // upload sheet
   sheetOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",
@@ -331,7 +527,6 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     fontSize: 14,
   },
-
   aiRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -343,7 +538,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
-
   label: {
     fontSize: 13,
     fontWeight: "600",
@@ -363,7 +557,6 @@ const styles = StyleSheet.create({
   multiline: {
     height: 120,
   },
-
   fileButtons: {
     marginTop: 4,
     marginBottom: 8,
@@ -398,7 +591,6 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     marginTop: 2,
   },
-
   actionsRow: {
     flexDirection: "row",
     gap: 10,
@@ -431,7 +623,6 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
   },
 
-  // simple modals for Add Class / Add Assignment
   simpleOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.35)",

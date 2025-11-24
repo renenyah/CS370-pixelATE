@@ -22,6 +22,9 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // New: controls the mini popup
+  const [showGuide, setShowGuide] = useState(false);
+
   const handleSignup = async () => {
     if (!name.trim() || !email.trim() || !password.trim() || !confirm.trim()) {
       Alert.alert("Missing info", "Please fill in all fields.");
@@ -34,22 +37,21 @@ export default function SignupScreen() {
 
     setLoading(true);
     try {
-      // TODO: Replace with Supabase signUp call later:
+      // TODO: Replace with Supabase signUp later:
       // const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
 
-      setTimeout(() => {
-        setLoading(false);
-        Alert.alert(
-          "Sign up",
-          "Account creation UI only. Connect Supabase here later."
-        );
-        // Example: after real signup, maybe go to login:
-        // router.replace("/login");
-      }, 500);
+      // For now, just pretend account was created and show guide
+      setLoading(false);
+      setShowGuide(true);
     } catch (e: any) {
       setLoading(false);
       Alert.alert("Signup error", e?.message || "Something went wrong.");
     }
+  };
+
+  const handleStartApp = () => {
+    setShowGuide(false);
+    router.replace("/");
   };
 
   return (
@@ -58,7 +60,7 @@ export default function SignupScreen() {
       behavior={Platform.select({ ios: "padding", android: undefined })}
     >
       <View style={styles.inner}>
-        {/* Title / tagline */}
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.appName}>pixelATE</Text>
           <Text style={styles.welcome}>Create your account ✨</Text>
@@ -67,6 +69,7 @@ export default function SignupScreen() {
           </Text>
         </View>
 
+        {/* Card */}
         <View style={styles.card}>
           {/* Name */}
           <Text style={styles.label}>Full name</Text>
@@ -154,6 +157,43 @@ export default function SignupScreen() {
           </Link>
         </View>
       </View>
+
+      {/* MINI HOW-TO POPUP */}
+      {showGuide && (
+        <View style={styles.guideOverlay}>
+          <View style={styles.guideCard}>
+            <Text style={styles.guideTitle}>How to use pixelATE</Text>
+            <Text style={styles.guideSubtitle}>
+              A quick guide before you start ✨
+            </Text>
+
+            <View style={styles.guideList}>
+              <Text style={styles.guideItem}>
+                • Tap the <Text style={styles.guideBold}>+</Text> button to{" "}
+                <Text style={styles.guideBold}>Upload Syllabus</Text> (PDF, image,
+                or pasted text).
+              </Text>
+              <Text style={styles.guideItem}>
+                • On <Text style={styles.guideBold}>Home</Text>, see{" "}
+                <Text style={styles.guideBold}>Today’s</Text> assignments,
+                upcoming, and overdue — filter by class once you’ve uploaded.
+              </Text>
+              <Text style={styles.guideItem}>
+                • Use <Text style={styles.guideBold}>Classes</Text> to view all
+                assignments by class, and <Text style={styles.guideBold}>Calendar</Text>{" "}
+                to see what’s due each day (month / week / day views).
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.guideButton}
+              onPress={handleStartApp}
+            >
+              <Text style={styles.guideButtonText}>Start using pixelATE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -252,5 +292,61 @@ const styles = StyleSheet.create({
   footerLink: {
     color: "#A78BFA",
     fontWeight: "700",
+  },
+
+  // Guide overlay styles (same as login)
+  guideOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "rgba(15,23,42,0.85)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  guideCard: {
+    backgroundColor: "#020617",
+    borderRadius: 20,
+    padding: 20,
+    width: "100%",
+    maxWidth: 360,
+    borderWidth: 1,
+    borderColor: "#1F2937",
+  },
+  guideTitle: {
+    color: "#F9FAFB",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  guideSubtitle: {
+    color: "#9CA3AF",
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  guideList: {
+    marginBottom: 16,
+  },
+  guideItem: {
+    color: "#E5E7EB",
+    marginBottom: 8,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  guideBold: {
+    fontWeight: "700",
+    color: "#C4B5FD",
+  },
+  guideButton: {
+    backgroundColor: "#7C3AED",
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  guideButtonText: {
+    color: "#F9FAFB",
+    fontWeight: "800",
+    fontSize: 15,
   },
 });

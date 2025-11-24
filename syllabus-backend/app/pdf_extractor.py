@@ -69,7 +69,7 @@ LINE_STARTS_WITH_DATE = re.compile(
 # NEW: Lines that start with a numeric date, e.g., "9/12 Educational Reflection Due"
 LINE_STARTS_WITH_NUMERIC = re.compile(
     rf"""(?xi) ^
-    \s*(?P<date>{NUMERIC})      # 9/12 or 9/12/2025
+    \s*(?P<date>{NUMERIC})
     \s+
     (?P<title>[^.\n]*?\b(?:due|assigned|given)\b[^.\n]*)
     $
@@ -93,7 +93,7 @@ DUE_ON_DATE = re.compile(
     """,
 )
 
-# NEW: “due by Tuesday and Thursday” (optionally followed by dates)
+# “due by Tuesday and Thursday …”
 WEEKDAY_BLOCK = r"(?:Mon(?:day)?|Tue(?:s|sday)?|Wed(?:nesday)?|Thu(?:rs|rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)"
 DUE_BY_WEEKDAYS = re.compile(
     rf"(?i)\b(?:due(?:\s+at[^,:\n]+)?\s+by|due\s+by|given\s+on)\s+(?P<days>{WEEKDAY_BLOCK}(?:\s*(?:and|,)\s*{WEEKDAY_BLOCK})*)"
@@ -113,10 +113,12 @@ WEEKDAY = re.compile(
     r"(?i)\b(Mon(?:day)?|Tue(?:s|sday)?|Wed(?:nesday)?|Thu(?:rs|rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b"
 )
 
+
 def _clean(s: str) -> str:
     s = s.replace("\u2013", "-").replace("\u2014", "-")
     s = re.sub(r"[ \t]+", " ", s)
     return s.strip()
+
 
 def _normalize_calendar_spacing(text: str) -> str:
     """
@@ -132,6 +134,7 @@ def _normalize_calendar_spacing(text: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
     return text
 
+
 def _norm_date_to_iso(text: str, fallback_year: Optional[int]) -> str:
     if not text or not dateparser:
         return ""
@@ -146,6 +149,7 @@ def _norm_date_to_iso(text: str, fallback_year: Optional[int]) -> str:
         dt = dateparser.parse(f"{text} {fallback_year}", settings=settings)
     return dt.date().isoformat() if dt else ""
 
+
 def _detect_fallback_year(text: str) -> Optional[int]:
     m = SEMESTER_YEAR.search(text)
     if m:
@@ -154,6 +158,7 @@ def _detect_fallback_year(text: str) -> Optional[int]:
     if m2:
         return int(m2.group(1))
     return None
+
 
 def _detect_course_name(first_page_text: str) -> str:
     lines = [l.strip() for l in first_page_text.splitlines() if l.strip()]
@@ -170,16 +175,21 @@ def _detect_course_name(first_page_text: str) -> str:
             return _clean(ln)
     return ""
 
+
 def _unique(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
     seen: set[Tuple[str, str]] = set()
     out: List[Dict[str, str]] = []
     for it in items:
-        k = (_clean(it.get("title", "")).lower(), it.get("due_date_iso", "") or it.get("due_date_raw", "").lower())
+        k = (
+            _clean(it.get("title", "")).lower(),
+            it.get("due_date_iso", "") or it.get("due_date_raw", "").lower(),
+        )
         if k in seen:
             continue
         seen.add(k)
         out.append(it)
     return out
+
 
 # -------------------------
 # Core extraction from plain text
@@ -215,7 +225,10 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
             if not p:
                 continue
             if not re.search(r"(?i)\b(due|assigned|given)\b", p):
-                if not re.search(r"(?i)(final|midterm|exam|quiz|problem\s*set|assignment|homework|paper|project|prototype|reading|response|presentation)", p):
+                if not re.search(
+                    r"(?i)(final|midterm|exam|quiz|problem\s*set|assignment|homework|paper|project|prototype|reading|response|presentation)",
+                    p,
+                ):
                     continue
             iso = _norm_date_to_iso(date_raw, fallback_year)
             if iso:
@@ -259,7 +272,13 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
                 title = f"Assignment {am.group(0).split(':', 1)[0].strip()}: {_clean(am.group('title'))}"
                 iso = _norm_date_to_iso(current_week_date, fallback_year)
                 if iso:
-                    results.append({"title": title, "due_date_raw": current_week_date, "due_date_iso": iso})
+                    results.append(
+                        {
+                            "title": title,
+                            "due_date_raw": current_week_date,
+                            "due_date_iso": iso,
+                        }
+                    )
 
     # NEW Pass E: “... due by Tuesday and Thursday ... [maybe followed by date tokens]”
     last_concrete_date_raw: Optional[str] = None
@@ -281,20 +300,27 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
             continue
 
         # If the same line has explicit dates after the weekdays, prefer those
-        tail = ln_c[m.end():]
+        tail = ln_c[m.end() :]
         dates_in_tail = [_clean(x) for x in re.findall(DATE_TOKEN, tail)]
         if dates_in_tail:
             for d in dates_in_tail:
                 iso = _norm_date_to_iso(d, fallback_year)
-                results.append({"title": title_left, "due_date_raw": d, "due_date_iso": iso})
+                results.append(
+                    {"title": title_left, "due_date_raw": d, "due_date_iso": iso}
+                )
             continue
 
         # Otherwise, store the weekday(s) with week context if we have it (ISO may stay empty)
         days_str = _clean(m.group("days"))
-        context = f"{days_str}" + (f" (week of {last_concrete_date_raw})" if last_concrete_date_raw else "")
-        results.append({"title": title_left, "due_date_raw": context, "due_date_iso": ""})
+        context = f"{days_str}" + (
+            f" (week of {last_concrete_date_raw})" if last_concrete_date_raw else ""
+        )
+        results.append(
+            {"title": title_left, "due_date_raw": context, "due_date_iso": ""}
+        )
 
     return _unique(results)
+
 
 # -------------------------
 # Public API (what your FastAPI imports)
@@ -332,13 +358,15 @@ def extract_assignments_from_pdf(pdf_path: str) -> Dict[str, Any]:
     fallback_year = _detect_fallback_year(joined)
     course_name = _detect_course_name(first_page_text)
     sem_match = SEMESTER_YEAR.search(joined)
-    semester_year = f"{sem_match.group(1).title()} {sem_match.group(2)}" if sem_match else ""
+    semester_year = (
+        f"{sem_match.group(1).title()} {sem_match.group(2)}" if sem_match else ""
+    )
 
     # Core extraction
     items = extract_from_text(joined, fallback_year)
 
     # include page numbers when we can roughly guess them (match by date snippet)
-    enriched: List[Dict[str, str]] = []
+    enriched: List[Dict[str, Any]] = []
     for it in items:
         date_raw = it.get("due_date_raw", "")
         found_page = None
@@ -356,28 +384,50 @@ def extract_assignments_from_pdf(pdf_path: str) -> Dict[str, Any]:
         "items": enriched,
     }
 
+
 # Optional helper used elsewhere
 def normalize_date_text(text: str) -> str:
     return _norm_date_to_iso(text, fallback_year=None)
 
-# Byte helper (kept for your app endpoints)
-def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]:
+
+# Byte helper (used by /assignments/pdf)
+def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> Dict[str, Any]:
+    """
+    Same idea as extract_assignments_from_pdf, but works from in-memory bytes.
+    Returns:
+      {
+        'course_name': str,
+        'items': [
+          {
+            'title', 'due_date_raw', 'due_date_iso',
+            'page'?, 'course'?
+          }, ...
+        ]
+      }
+    """
     if fitz is None:
         raise RuntimeError("PyMuPDF (fitz) is not installed. pip install PyMuPDF")
+
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages = []
-    for page in doc:
+    pages: List[str] = []
+    first_page_text = ""
+    for i, page in enumerate(doc):
         txt = page.get_text("text")
+        if i == 0:
+            first_page_text = txt
         txt = re.sub(r"[ \t]+", " ", txt)
         txt = txt.replace("—", "-")
         pages.append(txt)
     doc.close()
+
     joined = "\n".join(pages)
     fallback_year = _detect_fallback_year(joined)
-    items = extract_from_text(joined, fallback_year)
-    # add rough page numbers
+    course_name = _detect_course_name(first_page_text)
+
+    base_items = extract_from_text(joined, fallback_year)
+
     enriched: List[Dict[str, Any]] = []
-    for it in items:
+    for it in base_items:
         date_raw = it.get("due_date_raw", "")
         found_page = None
         if date_raw:
@@ -386,8 +436,19 @@ def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]
                 if needle in pg or date_raw in pg:
                     found_page = idx
                     break
-        enriched.append({**it, "page": found_page})
-    return enriched
+        enriched.append(
+            {
+                **it,
+                "page": found_page,
+                "course": course_name,
+            }
+        )
+
+    return {
+        "course_name": course_name,
+        "items": enriched,
+    }
+
 
 # Text helper (kept for /assignments/text)
 def extract_assignments_from_text(text: str) -> List[Dict[str, Any]]:

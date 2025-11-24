@@ -51,7 +51,7 @@ export default function SignupScreen() {
 
   const handleStartApp = () => {
     setShowGuide(false);
-    router.replace("/");
+    router.replace("/home");
   };
 
   return (

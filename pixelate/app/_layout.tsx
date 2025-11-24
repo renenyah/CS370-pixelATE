@@ -25,22 +25,23 @@ export default function RootLayout() {
   return (
     <AssignmentsProvider>
       <View style={{ flex: 1 }}>
+        {/* Expo Router handles screens from the file system.
+           We don't set initialRouteName here; instead we redirect from index.tsx */}
         <Stack screenOptions={{ headerShown: false }} />
 
         {plusOpen && (
           <PlusMenu onClose={() => setPlusOpen(false)} />
         )}
 
+        {/* Bottom nav - always visible, exactly like you had it */}
         <View style={styles.navBar}>
           <NavItem
             label="Home"
             Icon={HomeIcon}
-            active={
-              pathname === "/" || pathname === "/index"
-            }
+            active={pathname === "/home"}
             onPress={() => {
               setPlusOpen(false);
-              router.push("/");
+              router.push("/home");
             }}
           />
 

@@ -47,7 +47,7 @@ export default function LoginScreen() {
   const handleStartApp = () => {
     // After the mini guide, take them into the app (Home tab)
     setShowGuide(false);
-    router.replace("/");
+    router.replace("/home");
   };
 
   return (

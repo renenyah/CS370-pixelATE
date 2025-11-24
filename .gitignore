@@ -127,6 +127,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.venv-syllabus/
 
 # Spyder project settings
 .spyderproject
@@ -152,6 +153,21 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# Project Output
+**/preprocessed/
+syllabus_text.txt
+bounding_boxes.png
+
+# Test Data (optional, but good practice to ignore large images)
+**/test_files/*.png
+
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# VS Code Files
+.vscode/
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore

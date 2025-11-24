@@ -1,0 +1,395 @@
+# app/pdf_extractor.py
+from __future__ import annotations
+
+import re
+import os
+from typing import List, Dict, Any, Optional, Tuple
+
+# PDF text extraction
+try:
+    import fitz  # PyMuPDF
+except Exception:
+    fitz = None  # We'll raise a helpful error at call time
+
+# Date parsing
+try:
+    import dateparser
+except Exception:
+    dateparser = None
+
+# -------------------------
+# Small utilities
+# -------------------------
+
+MONTH = r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z\.]*"
+DAY = r"\d{1,2}"
+YEAR = r"\d{4}"
+MD = rf"{MONTH}\s+{DAY}"
+MDY = rf"{MONTH}\s+{DAY}(?:,\s*{YEAR})?"
+MDY_PAREN = rf"(?:Mon|Tue|Tues|Wed|Thu|Thur|Fri|Sat|Sun)[a-z]*\s+{MDY}"
+NUMERIC = r"\d{1,2}/\d{1,2}(?:/\d{2,4})?"
+
+DATE_TOKEN = rf"(?:{MDY}|{MD}|{MDY_PAREN}|{NUMERIC})"
+
+# Examples we want to catch:
+EXPLICIT_DUE_GIVEN = re.compile(
+    rf"""(?xi)
+    (?P<title>
+        (?:Final\s+(?:Essay\s+)??Exam|Midterm(?:\s+Essay)?\s+Exam|
+         Exam|Quiz|Problem\s*Set\s*\d+|Problem\s*Set|PS\s*\d+|Homework|HW\s*\d+|
+         Assignment\s*\d+|Assignment|Paper|Essay|Project|Prototype|Reading(?:\s*Response)?|
+         Response|Presentation|Lab(?:\s*Session)?)
+        [^\.:\n]*?
+    )
+    (?:\s*[\(\[]\d+%[\)\]])?
+    [^:\n]*?
+    (?:\b(?:due|given)\b|\b(?:due\s+at|due\s+on)\b)
+    [^:\n,;]*?
+    (?:on|by|:)?\s*
+    (?P<date>{DATE_TOKEN})
+    """,
+    re.IGNORECASE,
+)
+
+# Lines that begin with a date (typical schedules):
+LINE_STARTS_WITH_DATE = re.compile(
+    rf"""(?xi) ^
+    (?P<date>{MONTH}\s+{DAY}(?:,\s*{YEAR})?
+      |{MONTH}\.?\s+{DAY}(?:,\s*{YEAR})?
+      |\b(?:Aug|Sept|Sep|Oct|Nov|Dec|Jan|Feb|Mar|Apr|May|Jun|Jul)[a-z\.]*\s+{DAY}\b
+    )
+    [^\n]*?
+    (?P<title>(?:Final\s+Exam|Midterm|Exam|Quiz|Problem\s*Set\s*\d+|Problem\s*Set|PS\s*\d+|
+                 Assignment\s*\d+|Assignment|Homework|HW\s*\d+|Paper|Essay|Project|
+                 Prototype|Reading(?:\s*Response)?|Response|Presentation)
+                 [^.\n]*?(?:due|assigned|given)?)
+    """,
+)
+
+# NEW: Lines that start with a numeric date, e.g., "9/12 Educational Reflection Due"
+LINE_STARTS_WITH_NUMERIC = re.compile(
+    rf"""(?xi) ^
+    \s*(?P<date>{NUMERIC})      # 9/12 or 9/12/2025
+    \s+
+    (?P<title>[^.\n]*?\b(?:due|assigned|given)\b[^.\n]*)
+    $
+    """
+)
+
+# Weekly plan style for Rome Sketchbook:
+WEEK_LINE = re.compile(
+    rf"(?i)^\s*week\s*\d+\s*\((?:mon|tue|wed|thu|fri|sat|sun)[a-z]*\s+(?P<date>{DATE_TOKEN})\)\s*"
+)
+ASSIGNMENT_AFTER_WEEK = re.compile(
+    r"(?i)\bAssignment\s*\d+\s*[:\-]\s*(?P<title>[^.\n]+)"
+)
+
+# “response … due at the beginning of class on, November 10”
+DUE_ON_DATE = re.compile(
+    rf"""(?xi)
+    (?P<title>[^.\n]{{6,}}?)
+    \b(?:due\s*(?:at[^,\n]+)?\s*on,?\s*|due\s*[,:\-]?\s*)
+    (?P<date>{DATE_TOKEN})
+    """,
+)
+
+# NEW: “due by Tuesday and Thursday” (optionally followed by dates)
+WEEKDAY_BLOCK = r"(?:Mon(?:day)?|Tue(?:s|sday)?|Wed(?:nesday)?|Thu(?:rs|rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)"
+DUE_BY_WEEKDAYS = re.compile(
+    rf"(?i)\b(?:due(?:\s+at[^,:\n]+)?\s+by|due\s+by|given\s+on)\s+(?P<days>{WEEKDAY_BLOCK}(?:\s*(?:and|,)\s*{WEEKDAY_BLOCK})*)"
+)
+
+COURSE_NAME_PATTERNS = [
+    re.compile(r"(?i)^\s*course\s*name\s*:\s*(?P<name>.+)$"),
+    re.compile(r"(?i)^\s*course\s*code\s*:\s*(?P<name>.+)$"),
+    re.compile(r"(?i)^\s*course\s*syllabus\s*(?P<name>.*)$"),
+    re.compile(r"(?i)^\s*([A-Z]{2,}\s*\d{2,}[A-Z\-]*\s*[:\-]?\s*.+)$"),
+]
+
+SEMESTER_YEAR = re.compile(r"(?i)\b(Spring|Summer|Fall|Autumn|Winter)\s+(20\d{2})\b")
+ANY_YEAR = re.compile(r"\b(20\d{2})\b")
+
+WEEKDAY = re.compile(
+    r"(?i)\b(Mon(?:day)?|Tue(?:s|sday)?|Wed(?:nesday)?|Thu(?:rs|rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)\b"
+)
+
+def _clean(s: str) -> str:
+    s = s.replace("\u2013", "-").replace("\u2014", "-")
+    s = re.sub(r"[ \t]+", " ", s)
+    return s.strip()
+
+def _normalize_calendar_spacing(text: str) -> str:
+    """
+    Fix common OCR/PDF merges like 'ThursdayOctober 1' -> 'Thursday October 1'.
+    Also collapses multiple spaces.
+    """
+    text = re.sub(
+        r"(?i)\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)"
+        r"(?=(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z\.]*\s+\d{1,2})",
+        r"\1 ",
+        text,
+    )
+    text = re.sub(r"[ \t]+", " ", text)
+    return text
+
+def _norm_date_to_iso(text: str, fallback_year: Optional[int]) -> str:
+    if not text or not dateparser:
+        return ""
+    text = text.replace(".", "")  # "Jan." -> "Jan"
+    settings = {
+        "RETURN_AS_TIMEZONE_AWARE": False,
+        "PREFER_DAY_OF_MONTH": "first",
+        "DATE_ORDER": "MDY",
+    }
+    dt = dateparser.parse(text, settings=settings)
+    if not dt and fallback_year:
+        dt = dateparser.parse(f"{text} {fallback_year}", settings=settings)
+    return dt.date().isoformat() if dt else ""
+
+def _detect_fallback_year(text: str) -> Optional[int]:
+    m = SEMESTER_YEAR.search(text)
+    if m:
+        return int(m.group(2))
+    m2 = ANY_YEAR.search(text)
+    if m2:
+        return int(m2.group(1))
+    return None
+
+def _detect_course_name(first_page_text: str) -> str:
+    lines = [l.strip() for l in first_page_text.splitlines() if l.strip()]
+    # Try explicit patterns
+    for ln in lines[:40]:
+        for pat in COURSE_NAME_PATTERNS:
+            m = pat.search(ln)
+            if m:
+                name = m.groupdict().get("name") or m.group(0)
+                return _clean(name)
+    # Fallback: look for a line with colon after an all-caps code
+    for ln in lines[:40]:
+        if re.search(r"^[A-Z]{2,}[- ]?\d{2,}[A-Z0-9\-]*\b", ln):
+            return _clean(ln)
+    return ""
+
+def _unique(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    seen: set[Tuple[str, str]] = set()
+    out: List[Dict[str, str]] = []
+    for it in items:
+        k = (_clean(it.get("title", "")).lower(), it.get("due_date_iso", "") or it.get("due_date_raw", "").lower())
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(it)
+    return out
+
+# -------------------------
+# Core extraction from plain text
+# -------------------------
+
+def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict[str, str]]:
+    results: List[Dict[str, str]] = []
+    text = _normalize_calendar_spacing(full_text)
+
+    # Pass A: explicit “due/given … <date>”
+    for m in EXPLICIT_DUE_GIVEN.finditer(text):
+        title = _clean(m.group("title"))
+        date_raw = _clean(m.group("date"))
+        iso = _norm_date_to_iso(date_raw, fallback_year)
+        if iso:
+            results.append({"title": title, "due_date_raw": date_raw, "due_date_iso": iso})
+
+    # Pass B: schedule rows beginning with a month-name date
+    for ln in text.splitlines():
+        ln_c = _clean(ln)
+        mb = LINE_STARTS_WITH_DATE.search(ln_c)
+        if not mb:
+            continue
+        date_raw = _clean(mb.group("date"))
+        title = _clean(mb.group("title"))
+        parts = re.split(
+            r"\s*,\s*(?=(?:Problem|PS|Assignment|Homework|Final|Midterm|Exam|Quiz|Project|Prototype|Reading|Response|Presentation)\b)",
+            title,
+            maxsplit=5,
+        )
+        for p in parts:
+            p = _clean(p)
+            if not p:
+                continue
+            if not re.search(r"(?i)\b(due|assigned|given)\b", p):
+                if not re.search(r"(?i)(final|midterm|exam|quiz|problem\s*set|assignment|homework|paper|project|prototype|reading|response|presentation)", p):
+                    continue
+            iso = _norm_date_to_iso(date_raw, fallback_year)
+            if iso:
+                results.append({"title": p, "due_date_raw": date_raw, "due_date_iso": iso})
+
+    # Pass B2: lines that begin with a numeric date (e.g., "9/12 Educational Reflection Due")
+    for ln in text.splitlines():
+        ln_c = _clean(ln)
+        mb_num = LINE_STARTS_WITH_NUMERIC.search(ln_c)
+        if not mb_num:
+            continue
+        date_raw = _clean(mb_num.group("date"))
+        title = _clean(mb_num.group("title"))
+        iso = _norm_date_to_iso(date_raw, fallback_year)
+        if iso or date_raw:
+            results.append(
+                {"title": title, "due_date_raw": date_raw, "due_date_iso": iso}
+            )
+
+    # Pass C: “... due ... on <date>”
+    for m in DUE_ON_DATE.finditer(text):
+        title = _clean(m.group("title"))
+        if len(title) > 180:
+            continue
+        date_raw = _clean(m.group("date"))
+        iso = _norm_date_to_iso(date_raw, fallback_year)
+        if iso:
+            results.append({"title": title, "due_date_raw": date_raw, "due_date_iso": iso})
+
+    # Pass D: Rome “Week … (Mon Jan. 27) … Assignment N: ...”
+    current_week_date: Optional[str] = None
+    for ln in text.splitlines():
+        ln_c = _clean(ln)
+        wm = WEEK_LINE.search(ln_c)
+        if wm:
+            current_week_date = _clean(wm.group("date"))
+            continue
+        if current_week_date:
+            am = ASSIGNMENT_AFTER_WEEK.search(ln_c)
+            if am:
+                title = f"Assignment {am.group(0).split(':', 1)[0].strip()}: {_clean(am.group('title'))}"
+                iso = _norm_date_to_iso(current_week_date, fallback_year)
+                if iso:
+                    results.append({"title": title, "due_date_raw": current_week_date, "due_date_iso": iso})
+
+    # NEW Pass E: “... due by Tuesday and Thursday ... [maybe followed by date tokens]”
+    last_concrete_date_raw: Optional[str] = None
+    lines = text.splitlines()
+    for ln in lines:
+        ln_c = _clean(ln)
+        # update last seen concrete date (first date token on the line)
+        dr = re.search(DATE_TOKEN, ln_c)
+        if dr:
+            last_concrete_date_raw = _clean(dr.group(0))
+
+        m = DUE_BY_WEEKDAYS.search(ln_c)
+        if not m:
+            continue
+
+        # title is text before the 'due by ...' block
+        title_left = _clean(ln_c[: m.start()]).strip(": -")
+        if not title_left:
+            continue
+
+        # If the same line has explicit dates after the weekdays, prefer those
+        tail = ln_c[m.end():]
+        dates_in_tail = [_clean(x) for x in re.findall(DATE_TOKEN, tail)]
+        if dates_in_tail:
+            for d in dates_in_tail:
+                iso = _norm_date_to_iso(d, fallback_year)
+                results.append({"title": title_left, "due_date_raw": d, "due_date_iso": iso})
+            continue
+
+        # Otherwise, store the weekday(s) with week context if we have it (ISO may stay empty)
+        days_str = _clean(m.group("days"))
+        context = f"{days_str}" + (f" (week of {last_concrete_date_raw})" if last_concrete_date_raw else "")
+        results.append({"title": title_left, "due_date_raw": context, "due_date_iso": ""})
+
+    return _unique(results)
+
+# -------------------------
+# Public API (what your FastAPI imports)
+# -------------------------
+
+def extract_assignments_from_pdf(pdf_path: str) -> Dict[str, Any]:
+    """
+    Read a PDF and return:
+      {
+        'course_name': str,
+        'semester_year': 'Fall 2025' (if found) or '',
+        'items': [{'title','due_date_raw','due_date_iso','page'}...]
+      }
+    """
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed. pip install PyMuPDF")
+
+    if not os.path.exists(pdf_path):
+        raise FileNotFoundError(pdf_path)
+
+    doc = fitz.open(pdf_path)
+    all_text = []
+    first_page_text = ""
+    for i, page in enumerate(doc):
+        txt = page.get_text("text")
+        if i == 0:
+            first_page_text = txt
+        # Make tabley PDFs easier by collapsing runs of spaces/dashes
+        txt = re.sub(r"[ \t]+", " ", txt)
+        txt = txt.replace("—", "-")
+        all_text.append(txt)
+    doc.close()
+
+    joined = "\n".join(all_text)
+    fallback_year = _detect_fallback_year(joined)
+    course_name = _detect_course_name(first_page_text)
+    sem_match = SEMESTER_YEAR.search(joined)
+    semester_year = f"{sem_match.group(1).title()} {sem_match.group(2)}" if sem_match else ""
+
+    # Core extraction
+    items = extract_from_text(joined, fallback_year)
+
+    # include page numbers when we can roughly guess them (match by date snippet)
+    enriched: List[Dict[str, str]] = []
+    for it in items:
+        date_raw = it.get("due_date_raw", "")
+        found_page = None
+        if date_raw:
+            needle = date_raw.replace(".", "")
+            for idx, pg in enumerate(all_text, start=1):
+                if needle in pg or date_raw in pg:
+                    found_page = idx
+                    break
+        enriched.append({**it, "page": found_page})
+
+    return {
+        "course_name": course_name,
+        "semester_year": semester_year,
+        "items": enriched,
+    }
+
+# Optional helper used elsewhere
+def normalize_date_text(text: str) -> str:
+    return _norm_date_to_iso(text, fallback_year=None)
+
+# Byte helper (kept for your app endpoints)
+def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> List[Dict[str, Any]]:
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) is not installed. pip install PyMuPDF")
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    pages = []
+    for page in doc:
+        txt = page.get_text("text")
+        txt = re.sub(r"[ \t]+", " ", txt)
+        txt = txt.replace("—", "-")
+        pages.append(txt)
+    doc.close()
+    joined = "\n".join(pages)
+    fallback_year = _detect_fallback_year(joined)
+    items = extract_from_text(joined, fallback_year)
+    # add rough page numbers
+    enriched: List[Dict[str, Any]] = []
+    for it in items:
+        date_raw = it.get("due_date_raw", "")
+        found_page = None
+        if date_raw:
+            needle = date_raw.replace(".", "")
+            for idx, pg in enumerate(pages, start=1):
+                if needle in pg or date_raw in pg:
+                    found_page = idx
+                    break
+        enriched.append({**it, "page": found_page})
+    return enriched
+
+# Text helper (kept for /assignments/text)
+def extract_assignments_from_text(text: str) -> List[Dict[str, Any]]:
+    fallback_year = _detect_fallback_year(text)
+    return extract_from_text(text, fallback_year)

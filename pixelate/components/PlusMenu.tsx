@@ -213,19 +213,39 @@ export default function PlusMenu({ onClose }: Props) {
         animationType="fade"
         onRequestClose={closeAll}
       >
-        <View style={styles.simpleOverlay}>
-          <View style={styles.simpleBox}>
-            <Text style={styles.simpleTitle}>Add Class</Text>
+        <View style={styles.smallOverlay}>
+          <View style={styles.smallSheet}>
+            {/* Header */}
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Add Class</Text>
+              <TouchableOpacity onPress={closeAll}>
+                <X size={22} color='#111827'/>
+              </TouchableOpacity>
+            </View>
+
+
             <Text style={styles.simpleText}>
               Later, this will let you create a class with a color and name.
             </Text>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={closeAll}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.primaryText}>Got it</Text>
-            </TouchableOpacity>
+
+            {/* Footer buttons */}
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                activeOpacity={0.9}
+                onPress={closeAll}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                activeOpacity={0.9}
+                onPress={handleParse}
+              >
+                <Text style={styles.primaryText}>Add Class</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -462,4 +482,28 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     marginBottom: 4,
   },
+
+  // smaller boxes for class and assignments
+  smallOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+
+  smallSheet: {
+    width: "100%",
+    maxWidth: 400,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 16,
+    elevation: 10,
+  },
+
+
 });

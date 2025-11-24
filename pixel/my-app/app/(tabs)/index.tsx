@@ -1,1000 +1,591 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   ScrollView,
   StyleSheet,
+  TouchableOpacity,
+  TextInput,
   Alert,
   Modal,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import {
-  Folder as FolderIcon,
-  Plus,
-  Upload,
-  ChevronRight,
-  X,
+  Home as HomeIcon,
   Clock,
+  FolderOpenDot,
+  UploadCloud,
+  Plus,
+  Calendar as CalIcon,
   Save,
+  X,
   Trash2,
-  ChevronLeft,
-  ChevronRight as ArrowRight,
-  MoreHorizontal,
-  Image as ImageIcon,
-  FileText,
-  Wand2,
-} from 'lucide-react-native';
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
+  ChevronRight,
+} from "lucide-react-native";
 
-/** ========= Types ========= */
-type Priority = 'high' | 'medium' | 'low';
-type AssignmentType =
-  | 'Assignment'
-  | 'Discussion'
-  | 'Reading'
-  | 'Art'
-  | 'Quiz'
-  | 'Test'
-  | 'Project'
-  | 'Other';
-
-type FileAttachment = {
-  uri: string;
-  name: string;
-  type: string;
-  size: number;
-};
+/* ------------------------ Types & constants ------------------------ */
+type Priority = "high" | "medium" | "low";
 
 type Assignment = {
-  id: string;
+  id: string;                 // stable id
   title: string;
   course: string;
-  dueISO?: string | null;
-  dueTime?: string;
-  priority: Priority;
-  attachments?: FileAttachment[];
-  type?: AssignmentType;
+  type?: string;              // Assignment, Reading, Quiz, Test, etc.
   description?: string;
+  dueDateISO: string;         // YYYY-MM-DD
 };
 
 type DueItem = {
   title: string;
   due_date_raw?: string;
   due_date_iso?: string;
+  page?: number | null;
+  source?: string;
   course?: string;
+  type?: string;
+  description?: string;
 };
 
 type ApiResponse = {
-  status: 'ok' | 'error';
+  status: "ok" | "error";
   message?: string;
   items?: DueItem[];
+  pdf_name?: string;
+  image_name?: string;
+  llm_used?: boolean;
+  llm_error?: string | null;
 };
 
-/** ========= Backend config ========= */
-const API_BASE = (process.env.EXPO_PUBLIC_API_BASE || 'http://10.44.180.114:8000').replace(
-  /\/+$/,
-  '',
-);
+const STORAGE_KEY = "assignments_v1";
+const API_BASE = (process.env.EXPO_PUBLIC_API_BASE || "http://127.0.0.1:8000")
+  .replace(/\/+$/, "");
 
-/** ========= Utils ========= */
+/* ------------------------ Small utilities ------------------------ */
 const todayISO = new Date().toISOString().slice(0, 10);
-const TABBAR_HEIGHT = 64; // visual height of your tab bar
 
-function safeISO(input?: string | null): string | null {
-  if (!input) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
-  const d = new Date(input);
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-  const m = input.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (m) {
-    const mm = Number(m[1]) - 1;
-    const dd = Number(m[2]);
-    const yy = m[3].length === 2 ? Number('20' + m[3]) : Number(m[3]);
-    const dt = new Date(yy, mm, dd);
-    if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
+function parseToISO(input?: string): string {
+  if (!input) return "";
+  // allow already-ISO, mm/dd/yyyy, Month day, year
+  const trimmed = input.trim();
+
+  // ISO-like
+  const isoLike = /^\d{4}-\d{2}-\d{2}/.test(trimmed);
+  if (isoLike) {
+    const d = new Date(trimmed);
+    return isNaN(+d) ? "" : d.toISOString().slice(0, 10);
   }
-  return null;
-}
-const isSameISO = (a?: string | null, b?: string | null) => (!!a && !!b ? a === b : false);
-const isOverdue = (iso?: string | null) => (iso ? iso < todayISO : false);
-const within7Days = (iso?: string | null) => {
-  if (!iso) return false;
-  const a = new Date(iso + 'T00:00:00');
-  const b = new Date(todayISO + 'T00:00:00');
-  const diff = (a.getTime() - b.getTime()) / 86400000;
-  return diff >= 0 && diff <= 7;
-};
-const priorityFromISO = (iso?: string | null): Priority =>
-  !iso ? 'low' : isSameISO(iso, todayISO) ? 'high' : within7Days(iso) ? 'medium' : 'low';
-const nextId = (p = 'a') => `${p}_${Math.random().toString(36).slice(2, 10)}`;
 
-async function postFileToBackend(
-  endpointPath: string,
-  file: { uri: string; name: string; type: string },
-): Promise<ApiResponse> {
-  const url = `${API_BASE}${endpointPath}`;
+  // mm/dd/yyyy
+  const mdy = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/.exec(trimmed);
+  if (mdy) {
+    const m = Number(mdy[1]);
+    const d = Number(mdy[2]);
+    const y = Number(mdy[3].length === 2 ? "20" + mdy[3] : mdy[3]);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    return isNaN(+dt) ? "" : dt.toISOString().slice(0, 10);
+  }
+
+  const dt = new Date(trimmed);
+  return isNaN(+dt) ? "" : dt.toISOString().slice(0, 10);
+}
+
+function isOverdue(iso: string) {
+  return !!iso && iso < todayISO;
+}
+function isWithin7Days(iso: string) {
+  if (!iso) return false;
+  const now = new Date();
+  const in7 = new Date(now);
+  in7.setDate(in7.getDate() + 7);
+  return iso > todayISO && iso <= in7.toISOString().slice(0, 10);
+}
+function timeNow12h() {
+  return new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+async function loadAssignments(): Promise<Assignment[]> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw) as Assignment[];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+async function saveAssignments(arr: Assignment[]) {
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
+
+/* ------------------------ Backend helpers ------------------------ */
+function inferMimeFromName(name?: string, fallback = "application/octet-stream") {
+  if (!name) return fallback;
+  const n = name.toLowerCase();
+  if (n.endsWith(".pdf")) return "application/pdf";
+  if (n.endsWith(".png")) return "image/png";
+  if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+  return fallback;
+}
+async function postFile(endpointPath: string, file: { uri: string; name: string; type: string }) {
   const fd = new FormData();
-  fd.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
-  const res = await fetch(url, { method: 'POST', body: fd });
+  fd.append("file", { uri: file.uri, name: file.name, type: file.type } as any);
+  const res = await fetch(`${API_BASE}${endpointPath}`, { method: "POST", body: fd });
+  return (await res.json()) as ApiResponse;
+}
+async function postText(text: string) {
+  const res = await fetch(`${API_BASE}/assignments/text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
   return (await res.json()) as ApiResponse;
 }
 
-/** ========= Small UI helpers ========= */
-const Chip = ({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active?: boolean;
-  onPress?: () => void;
-}) => (
-  <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={[styles.chip, active && styles.chipActive]}>
-    <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
-  </TouchableOpacity>
-);
-
-const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
-  <View style={styles.section}>
-    <Text style={styles.sectionTitle}>{title}</Text>
-    {children}
-  </View>
-);
-
-const Empty = ({ text }: { text: string }) => (
-  <View style={styles.emptyWrap}>
-    <Text style={styles.emptyText}>{text}</Text>
-  </View>
-);
-
-/** ========= Class folder card ========= */
-function ClassFolderCard({
-  course,
-  overdueCount,
-  upcomingCount,
-  onOpen,
-}: {
-  course: string;
-  overdueCount: number;
-  upcomingCount: number;
-  onOpen: () => void;
-}) {
-  return (
-    <TouchableOpacity style={styles.classCard} onPress={onOpen} activeOpacity={0.9}>
-      <View style={styles.classHeaderRow}>
-        <FolderIcon size={24} color="#6D28D9" />
-        <Text numberOfLines={1} style={styles.classTitle}>
-          {course || 'Untitled Class'}
-        </Text>
-      </View>
-
-      <View style={styles.classPillsRow}>
-        <View style={[styles.pill, styles.pillOverdue]}>
-          <Text style={styles.pillText}>Overdue: {overdueCount}</Text>
-        </View>
-        <View style={[styles.pill, styles.pillUpcoming]}>
-          <Text style={styles.pillText}>Upcoming: {upcomingCount}</Text>
-        </View>
-      </View>
-
-      <View style={styles.classFooterRow}>
-        <Text style={styles.viewText}>View</Text>
-        <ChevronRight size={18} color="#6D28D9" />
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-/** ========= Screen ========= */
+/* ------------------------ Component ------------------------ */
 export default function HomeScreen() {
-  const insets = useSafeAreaInsets();
-
-  /** Data */
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-
-  /** UI state */
-  const [plusOpen, setPlusOpen] = useState(false);
+  const [aiRepair, setAiRepair] = useState<boolean>(false);
 
   // Upload modal
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [aiRepair, setAiRepair] = useState(false);
-  const [courseHint, setCourseHint] = useState('');
-  const [syllabusText, setSyllabusText] = useState('');
-  const [parsing, setParsing] = useState(false);
+  const [courseHint, setCourseHint] = useState("");
+  const [syllabusText, setSyllabusText] = useState("");
 
-  // Draft editor modal after Parse
-  const [draftsOpen, setDraftsOpen] = useState(false);
-  const [drafts, setDrafts] = useState<
-    { id: string; title: string; course: string; type: AssignmentType; dueISO?: string | null; description?: string }[]
-  >([]);
+  // Review/Edit modal
+  type Editable = {
+    key: string;
+    title: string;
+    course: string;
+    type: string;
+    description: string;
+    dueDateISO: string;
+  };
+  const [toReview, setToReview] = useState<Editable[] | null>(null);
 
-  // Class assignments modal
-  const [classOpen, setClassOpen] = useState(false);
-  const [classOpenName, setClassOpenName] = useState('');
+  // class filter on Home "Today's Assignments"
+  const [activeCourse, setActiveCourse] = useState<string>("__ALL__");
 
-  // Calendar state
-  const [calMode, setCalMode] = useState<'month' | 'week' | 'day'>('month');
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d;
-  });
-  const [selectedISO, setSelectedISO] = useState<string>(todayISO);
+  /* Load persisted data once */
+  useEffect(() => {
+    loadAssignments().then(setAssignments);
+  }, []);
 
-  /** Derived */
-  const courses = useMemo(() => {
+  /* Derived sets */
+  const classList = useMemo(() => {
     const s = new Set<string>();
     assignments.forEach((a) => a.course && s.add(a.course));
-    return Array.from(s);
+    return Array.from(s).sort();
   }, [assignments]);
 
-  const [todayCourse, setTodayCourse] = useState<string | 'All'>('All');
-
-  const dueTodayForCourse = useMemo(() => {
-    const items = assignments.filter((a) => isSameISO(a.dueISO || null, todayISO));
-    return todayCourse === 'All' ? items : items.filter((a) => a.course === todayCourse);
-  }, [assignments, todayCourse]);
-
-  const upcoming7 = useMemo(
-    () => assignments.filter((a) => within7Days(a.dueISO || null)),
-    [assignments],
+  const dueToday = useMemo(
+    () => assignments.filter((a) => a.dueDateISO === todayISO),
+    [assignments]
   );
-  const overdue = useMemo(() => assignments.filter((a) => isOverdue(a.dueISO || null)), [assignments]);
 
-  /** ======= Upload flow ======= */
-  const handlePickPdf = useCallback(async () => {
+  const dueTodayVisible = useMemo(() => {
+    if (activeCourse === "__ALL__") return dueToday;
+    return dueToday.filter((a) => a.course === activeCourse);
+  }, [dueToday, activeCourse]);
+
+  const upcomingCount = useMemo(
+    () => assignments.filter((a) => isWithin7Days(a.dueDateISO)).length,
+    [assignments]
+  );
+  const overdueCount = useMemo(
+    () => assignments.filter((a) => isOverdue(a.dueDateISO)).length,
+    [assignments]
+  );
+
+  /* ---------------- Upload & Parse ---------------- */
+  function openUpload() {
+    setCourseHint("");
+    setSyllabusText("");
+    setToReview(null);
+    setUploadOpen(true);
+  }
+  function closeUpload() {
+    setUploadOpen(false);
+    setToReview(null);
+  }
+
+  async function pickPdfOrDoc() {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf'],
+      type: ["application/pdf", "image/*"],
       copyToCacheDirectory: true,
     });
-    if (result.canceled || !result.assets?.[0]) return;
+    if (result.canceled || !result.assets?.length) return;
+
     const a = result.assets[0];
+    const file = {
+      uri: a.uri,
+      name: a.name || `upload_${Date.now()}`,
+      type: a.mimeType || inferMimeFromName(a.name),
+    };
 
-    setParsing(true);
-    try {
-      const resp = await postFileToBackend(
-        `/assignments/pdf?use_llm=${String(aiRepair)}`,
-        {
-          uri: a.uri,
-          name: a.name || `syllabus_${Date.now()}.pdf`,
-          type: a.mimeType || 'application/pdf',
-        },
-      );
-      if (resp.status !== 'ok') {
-        Alert.alert('Upload failed', resp.message || 'Server error');
-        return;
-      }
-      const ds =
-        (resp.items || []).map((it) => ({
-          id: nextId('d'),
-          title: it.title || 'Untitled',
-          course: courseHint || it.course || '',
-          type: 'Assignment' as AssignmentType,
-          dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
-        })) ?? [];
-      setDrafts(ds);
-      setDraftsOpen(true);
-    } catch (e: any) {
-      Alert.alert('Error', String(e?.message || e));
-    } finally {
-      setParsing(false);
+    const endpoint =
+      file.type.startsWith("image/")
+        ? `/assignments/image?preprocess=screenshot&use_llm=${String(aiRepair)}`
+        : `/assignments/pdf?use_llm=${String(aiRepair)}`;
+
+    const resp = await postFile(endpoint, file);
+    if (resp.status !== "ok") {
+      Alert.alert("Upload failed", resp.message || "Server error.");
+      return;
     }
-  }, [aiRepair, courseHint]);
+    const items = (resp.items || []).map((it, idx): Editable => ({
+      key: `${(it.course || courseHint || "Course").trim()}-${idx}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      title: it.title || "Untitled",
+      course: (it.course || courseHint || "").trim(),
+      type: it.type || "Assignment",
+      description: it.description || "",
+      dueDateISO: parseToISO(it.due_date_iso || it.due_date_raw) || "",
+    }));
+    if (!items.length) {
+      Alert.alert("No assignments found", "Try a different file or enable AI Repair.");
+      return;
+    }
+    setToReview(items);
+  }
 
-  const handlePickImage = useCallback(async () => {
+  async function pickImageFromLibrary() {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'] as any,
-      allowsEditing: false,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 1,
     });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset: any = result.assets[0];
+    if (result.canceled || !result.assets?.length) return;
 
-    setParsing(true);
-    try {
-      const resp = await postFileToBackend(
-        `/assignments/image?preprocess=${encodeURIComponent('screenshot')}&use_llm=${String(
-          aiRepair,
-        )}`,
-        {
-          uri: asset.uri,
-          name: asset.fileName || `image_${Date.now()}.jpg`,
-          type: asset.type || 'image/jpeg',
-        },
-      );
-      if (resp.status !== 'ok') {
-        Alert.alert('Upload failed', resp.message || 'Server error');
-        return;
-      }
-      const ds =
-        (resp.items || []).map((it) => ({
-          id: nextId('d'),
-          title: it.title || 'Untitled',
-          course: courseHint || it.course || '',
-          type: 'Assignment' as AssignmentType,
-          dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
-        })) ?? [];
-      setDrafts(ds);
-      setDraftsOpen(true);
-    } catch (e: any) {
-      Alert.alert('Error', String(e?.message || e));
-    } finally {
-      setParsing(false);
+    const asset = result.assets[0] as any;
+    const file = {
+      uri: asset.uri,
+      name: asset.fileName || `image_${Date.now()}.jpg`,
+      type: asset.type || "image/jpeg",
+    };
+    const resp = await postFile(
+      `/assignments/image?preprocess=screenshot&use_llm=${String(aiRepair)}`,
+      file
+    );
+    if (resp.status !== "ok") {
+      Alert.alert("Upload failed", resp.message || "Server error.");
+      return;
     }
-  }, [aiRepair, courseHint]);
+    const items = (resp.items || []).map((it, idx): Editable => ({
+      key: `${(it.course || courseHint || "Course").trim()}-${idx}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      title: it.title || "Untitled",
+      course: (it.course || courseHint || "").trim(),
+      type: it.type || "Assignment",
+      description: it.description || "",
+      dueDateISO: parseToISO(it.due_date_iso || it.due_date_raw) || "",
+    }));
+    if (!items.length) {
+      Alert.alert("No assignments found", "Try a clearer image or enable AI Repair.");
+      return;
+    }
+    setToReview(items);
+  }
 
-  const handleParseText = useCallback(async () => {
+  async function parseText() {
     if (!syllabusText.trim()) {
-      Alert.alert('Add some text', 'Paste syllabus text first.');
+      Alert.alert("Paste needed", "Paste text or upload a file/image.");
       return;
     }
-    setParsing(true);
-    try {
-      const res = await fetch(`${API_BASE}/assignments/text`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ text: syllabusText }),
-      });
-      const json = (await res.json()) as ApiResponse;
-      if (json.status !== 'ok') {
-        Alert.alert('Parse failed', json.message || 'Server error');
-        return;
-      }
-      const ds =
-        (json.items || []).map((it) => ({
-          id: nextId('d'),
-          title: it.title || 'Untitled',
-          course: courseHint || it.course || '',
-          type: 'Assignment' as AssignmentType,
-          dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
-        })) ?? [];
-      setDrafts(ds);
-      setDraftsOpen(true);
-    } catch (e: any) {
-      Alert.alert('Error', String(e?.message || e));
-    } finally {
-      setParsing(false);
+    const resp = await postText(syllabusText);
+    if (resp.status !== "ok") {
+      Alert.alert("Parse failed", resp.message || "Server error.");
+      return;
     }
-  }, [syllabusText, courseHint]);
+    const items = (resp.items || []).map((it, idx): Editable => ({
+      key: `${(it.course || courseHint || "Course").trim()}-${idx}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`,
+      title: it.title || "Untitled",
+      course: (it.course || courseHint || "").trim(),
+      type: it.type || "Assignment",
+      description: it.description || "",
+      dueDateISO: parseToISO(it.due_date_iso || it.due_date_raw) || "",
+    }));
+    if (!items.length) {
+      Alert.alert("No assignments found", "Try different text or enable AI Repair.");
+      return;
+    }
+    setToReview(items);
+  }
 
-  const saveDrafts = useCallback(() => {
-    if (!drafts.length) {
-      setDraftsOpen(false);
-      setUploadOpen(false);
+  function updateEditable(idx: number, patch: Partial<Editable>) {
+    if (!toReview) return;
+    const copy = [...toReview];
+    copy[idx] = { ...copy[idx], ...patch };
+    setToReview(copy);
+  }
+  function deleteEditable(idx: number) {
+    if (!toReview) return;
+    const copy = [...toReview];
+    copy.splice(idx, 1);
+    setToReview(copy.length ? copy : null);
+  }
+
+  async function startOver() {
+    setToReview(null);
+    setSyllabusText("");
+    setCourseHint("");
+  }
+
+  async function saveAllFromReview() {
+    if (!toReview || !toReview.length) {
+      Alert.alert("Nothing to save", "Add or parse items first.");
       return;
     }
-    setAssignments((prev) => [
-      ...prev,
-      ...drafts.map((d) => ({
-        id: nextId('a'),
-        title: d.title,
-        course: d.course,
-        dueISO: d.dueISO || null,
-        dueTime: '',
-        priority: priorityFromISO(d.dueISO || null),
-        type: d.type,
-        description: d.description,
-        attachments: [],
-      })),
-    ]);
-    setDraftsOpen(false);
+    const now = Date.now();
+    const newOnes: Assignment[] = toReview.map((e, i) => ({
+      id: `${now}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+      title: e.title.trim() || "Untitled",
+      course: e.course.trim(),
+      type: e.type || "Assignment",
+      description: e.description || "",
+      dueDateISO: e.dueDateISO || "",
+    }));
+    const merged = [...assignments, ...newOnes];
+    setAssignments(merged);
+    await saveAssignments(merged);
+    setToReview(null);
     setUploadOpen(false);
-    setPlusOpen(false);
-  }, [drafts]);
-
-  /** ======= Calendar helpers ======= */
-  const monthLabel = useMemo(
-    () => cursor.toLocaleDateString(undefined, { year: 'numeric', month: 'long' }),
-    [cursor],
-  );
-  function daysInMonth(d: Date) {
-    const y = d.getFullYear();
-    const m = d.getMonth();
-    return new Date(y, m + 1, 0).getDate();
+    Alert.alert("Saved", `${newOnes.length} assignment(s) saved.`);
   }
-  function startWeekday(d: Date) {
-    const t = new Date(d);
-    t.setDate(1);
-    return t.getDay();
-  }
-  const monthGrid = useMemo(() => {
-    const count = daysInMonth(cursor);
-    const start = startWeekday(cursor);
-    const cells: (string | null)[] = Array(start).fill(null);
-    for (let i = 1; i <= count; i++) {
-      const iso = new Date(cursor.getFullYear(), cursor.getMonth(), i).toISOString().slice(0, 10);
-      cells.push(iso);
-    }
-    while (cells.length % 7 !== 0) cells.push(null);
-    return cells;
-  }, [cursor]);
 
-  const dayAssignments = useMemo(
-    () => assignments.filter((a) => isSameISO(a.dueISO || null, selectedISO)),
-    [assignments, selectedISO],
-  );
-
-  /** ======= Render ======= */
-  const now = new Date();
-  const timeLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-  const dateLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
-
+  /* ------------------------ UI ------------------------ */
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.welcome}>Welcome! 📚</Text>
-        <Text style={styles.sub}>
-          {timeLabel} • {dateLabel}
-        </Text>
-      </View>
+    <View style={s.container}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Header */}
+        <View style={s.header}>
+          <Text style={s.title}>Welcome! 📚</Text>
+          <Text style={s.subtitle}>
+            {timeNow12h()} • {new Date().toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}
+          </Text>
+        </View>
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: TABBAR_HEIGHT + insets.bottom + 140 }}
-        showsVerticalScrollIndicator={false}
-      >
         {/* Stats */}
-        <View style={styles.statsRow}>
-          <View style={styles.statCard}>
-            <View style={styles.statIconWrap}>
-              <Clock size={20} color="#4F46E5" />
-            </View>
-            <Text style={styles.statTitle}>Upcoming (Next 7 Days)</Text>
-            <Text style={[styles.statNumber, { color: '#4F46E5' }]}>{upcoming7.length}</Text>
+        <View style={s.cardRow}>
+          <View style={s.statCard}>
+            <View style={s.statIconWrapBlue}><Clock size={18} color="#4f46e5" /></View>
+            <Text style={s.statLabel}>Upcoming (Next 7 Days)</Text>
+            <Text style={[s.statNumber, { color: "#4f46e5" }]}>{upcomingCount}</Text>
           </View>
-
-            <View style={styles.statCard}>
-            <View style={[styles.statIconWrap, { backgroundColor: '#FEE2E2' }]}>
-              <Clock size={20} color="#DC2626" />
-            </View>
-            <Text style={styles.statTitle}>Overdue</Text>
-            <Text style={[styles.statNumber, { color: '#DC2626' }]}>{overdue.length}</Text>
+          <View style={s.statCard}>
+            <View style={s.statIconWrapRed}><Clock size={18} color="#ef4444" /></View>
+            <Text style={s.statLabel}>Overdue</Text>
+            <Text style={[s.statNumber, { color: "#ef4444" }]}>{overdueCount}</Text>
           </View>
         </View>
 
         {/* Today */}
-        <Section title="Today’s Assignments">
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-            <Chip label="All" active={todayCourse === 'All'} onPress={() => setTodayCourse('All')} />
-            {courses.map((c, i) => (
-              <Chip key={`${c}-${i}`} label={c || 'Untitled'} active={todayCourse === c} onPress={() => setTodayCourse(c)} />
+        <View style={s.block}>
+          <Text style={s.blockTitle}>Today’s Assignments</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: 8 }}>
+            <TouchableOpacity
+              onPress={() => setActiveCourse("__ALL__")}
+              style={[s.chip, activeCourse === "__ALL__" && s.chipActive]}
+            >
+              <Text style={[s.chipText, activeCourse === "__ALL__" && s.chipTextActive]}>All</Text>
+            </TouchableOpacity>
+            {classList.map((c) => (
+              <TouchableOpacity
+                key={`pill-${c}`}
+                onPress={() => setActiveCourse(c)}
+                style={[s.chip, activeCourse === c && s.chipActive]}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={[s.chipText, activeCourse === c && s.chipTextActive]}
+                >
+                  {c}
+                </Text>
+              </TouchableOpacity>
             ))}
           </ScrollView>
 
-          {dueTodayForCourse.length === 0 ? (
-            <Empty text="No assignments due today 🎉" />
+          {dueTodayVisible.length === 0 ? (
+            <Text style={s.empty}>No assignments due today 🎉</Text>
           ) : (
-            <View style={{ gap: 10 }}>
-              {dueTodayForCourse.map((a) => (
-                <View key={a.id} style={styles.taskCard}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.taskTitle}>{a.title}</Text>
-                    {!!a.course && <Text style={styles.taskCourse}>{a.course}</Text>}
-                    {!!a.type && <Text style={styles.taskType}>{a.type}</Text>}
-                  </View>
-                  <View
-                    style={[
-                      styles.dot,
-                      a.priority === 'high'
-                        ? { backgroundColor: '#EF4444' }
-                        : a.priority === 'medium'
-                        ? { backgroundColor: '#F59E0B' }
-                        : { backgroundColor: '#10B981' },
-                    ]}
-                  />
-                </View>
-              ))}
-            </View>
-          )}
-        </Section>
-
-        {/* Classes */}
-        <Section title="Classes">
-          {courses.length === 0 ? (
-            <Empty text="No classes yet. Upload a syllabus or add assignments!" />
-          ) : (
-            <View style={{ gap: 14 }}>
-              {courses.map((course, idx) => {
-                const items = assignments.filter((a) => a.course === course);
-                const o = items.filter((a) => isOverdue(a.dueISO || null)).length;
-                const u = items.filter((a) => within7Days(a.dueISO || null)).length;
-                return (
-                  <ClassFolderCard
-                    key={`${course || 'class'}-${idx}`}
-                    course={course}
-                    overdueCount={o}
-                    upcomingCount={u}
-                    onOpen={() => {
-                      setClassOpenName(course);
-                      setClassOpen(true);
-                    }}
-                  />
-                );
-              })}
-            </View>
-          )}
-        </Section>
-
-        {/* Calendar */}
-        <Section title="Calendar">
-          <View style={styles.modeRow}>
-            {(['month', 'week', 'day'] as const).map((m) => (
-              <TouchableOpacity
-                key={m}
-                onPress={() => setCalMode(m)}
-                style={[styles.modeChip, calMode === m && styles.modeChipActive]}
-              >
-                <Text style={[styles.modeChipText, calMode === m && styles.modeChipTextActive]}>
-                  {m[0].toUpperCase() + m.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Month */}
-          {calMode === 'month' && (
-            <View>
-              <View style={styles.monthHeader}>
-                <TouchableOpacity
-                  onPress={() => {
-                    const d = new Date(cursor);
-                    d.setMonth(d.getMonth() - 1);
-                    setCursor(d);
-                  }}
-                  style={styles.monthNav}
-                >
-                  <ChevronLeft size={18} color="#6D28D9" />
-                </TouchableOpacity>
-                <Text style={styles.monthTitle}>
-                  {cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
-                </Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    const d = new Date(cursor);
-                    d.setMonth(d.getMonth() + 1);
-                    setCursor(d);
-                  }}
-                  style={styles.monthNav}
-                >
-                  <ArrowRight size={18} color="#6D28D9" />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.weekHeader}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
-                  <Text key={d} style={styles.weekHeaderText}>
-                    {d}
-                  </Text>
-                ))}
-              </View>
-
-              <View style={styles.grid}>
-                {monthGrid.map((iso, i) => {
-                  const onDay = assignments.filter((a) => isSameISO(a.dueISO || null, iso || ''));
-                  const has = !!iso && onDay.length > 0;
-                  const sel = isSameISO(iso, selectedISO);
-                  return (
-                    <TouchableOpacity
-                      key={`${iso ?? 'blank'}-${i}`}
-                      activeOpacity={0.85}
-                      onPress={() => iso && setSelectedISO(iso)}
-                      style={[styles.cell, sel && styles.cellSelected, !iso && styles.cellEmpty]}
-                    >
-                      {!!iso && (
-                        <>
-                          <Text style={[styles.cellNum, sel && styles.cellNumSelected]}>
-                            {iso.slice(-2).replace(/^0/, '')}
-                          </Text>
-                          {has && (
-                            <View style={styles.cellDotRow}>
-                              {onDay.slice(0, 2).map((a) => (
-                                <View key={a.id} style={styles.cellDot} />
-                              ))}
-                            </View>
-                          )}
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <View style={{ marginTop: 12 }}>
-                <Text style={styles.dayTitle}>
-                  {new Date(selectedISO).toLocaleDateString([], {
-                    month: 'long',
-                    day: 'numeric',
-                    weekday: 'long',
-                  })}
-                </Text>
-                {dayAssignments.length === 0 ? (
-                  <Empty text="Nothing due this day." />
-                ) : (
-                  <View style={{ gap: 10 }}>
-                    {dayAssignments.map((a) => (
-                      <View key={a.id} style={styles.taskCard}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.taskTitle}>{a.title}</Text>
-                          {!!a.course && <Text style={styles.taskCourse}>{a.course}</Text>}
-                          {!!a.type && <Text style={styles.taskType}>{a.type}</Text>}
-                        </View>
-                        <MoreHorizontal size={18} color="#6B7280" />
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            </View>
-          )}
-
-          {/* Week */}
-          {calMode === 'week' && (
-            <View>
-              <Text style={styles.weekLabel}>This Week</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
-                {[...Array(7)].map((_, idx) => {
-                  const d = new Date(selectedISO);
-                  const day = d.getDay();
-                  const mondayBased = new Date(d);
-                  mondayBased.setDate(d.getDate() - day + idx);
-                  const iso = mondayBased.toISOString().slice(0, 10);
-                  const items = assignments.filter((a) => isSameISO(a.dueISO || null, iso));
-                  const sel = isSameISO(iso, selectedISO);
-                  return (
-                    <TouchableOpacity
-                      key={iso}
-                      onPress={() => setSelectedISO(iso)}
-                      style={[styles.dayChip, sel && styles.dayChipActive]}
-                    >
-                      <Text style={[styles.dayChipText, sel && styles.dayChipTextActive]}>
-                        {mondayBased.toLocaleDateString([], { weekday: 'short', day: 'numeric' })}
-                      </Text>
-                      {items.length > 0 && <View style={styles.smallDot} />}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-
-              {dayAssignments.length === 0 ? (
-                <Empty text="No assignments this day." />
-              ) : (
-                <View style={{ gap: 10 }}>
-                  {dayAssignments.map((a) => (
-                    <View key={a.id} style={styles.taskCard}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.taskTitle}>{a.title}</Text>
-                        {!!a.course && <Text style={styles.taskCourse}>{a.course}</Text>}
-                        {!!a.type && <Text style={styles.taskType}>{a.type}</Text>}
-                      </View>
-                      <MoreHorizontal size={18} color="#6B7280" />
+            dueTodayVisible
+              .sort((a, b) => a.title.localeCompare(b.title))
+              .map((a) => (
+                <View key={a.id} style={s.itemCard}>
+                  <View style={{ flexDirection: "row", alignItems: "center" }}>
+                    <View style={s.itemIcon}><FolderOpenDot size={18} color="#6b7280" /></View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.itemTitle} numberOfLines={1}>{a.title}</Text>
+                      <Text style={s.itemMeta}>{a.course || "Uncategorized"} • {a.type || "Assignment"}</Text>
                     </View>
-                  ))}
+                  </View>
                 </View>
-              )}
-            </View>
+              ))
           )}
+        </View>
 
-          {/* Day */}
-          {calMode === 'day' && (
-            <View>
-              <Text style={styles.weekLabel}>
-                {new Date(selectedISO).toLocaleDateString([], {
-                  weekday: 'long',
-                  month: 'long',
-                  day: 'numeric',
-                })}
-              </Text>
-              {dayAssignments.length === 0 ? (
-                <Empty text="No assignments due today." />
-              ) : (
-                <View style={{ gap: 10 }}>
-                  {dayAssignments.map((a) => (
-                    <View key={a.id} style={styles.taskCard}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.taskTitle}>{a.title}</Text>
-                        {!!a.course && <Text style={styles.taskCourse}>{a.course}</Text>}
-                        {!!a.type && <Text style={styles.taskType}>{a.type}</Text>}
-                      </View>
-                      <MoreHorizontal size={18} color="#6B7280" />
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          )}
-        </Section>
+        {/* FAB actions (uses the + in tab bar visually, but here we provide the same action) */}
+        <View style={{ marginTop: 24, alignItems: "center" }}>
+          <TouchableOpacity onPress={openUpload} style={s.bigAction}>
+            <UploadCloud size={20} color="#111827" />
+            <Text style={s.bigActionText}>Upload Syllabus</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
-      {/* Floating + menu — sits ABOVE the tab bar */}
-      <View
-        pointerEvents="box-none"
-        style={[
-          styles.plusWrap,
-          { bottom: insets.bottom + TABBAR_HEIGHT + 8 },
-        ]}
-      >
-        {plusOpen && (
-          <View style={styles.plusMenu}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setUploadOpen(true);
-                setPlusOpen(false);
-              }}
-            >
-              <Upload size={20} color="#111827" />
-              <Text style={styles.menuItemText}>Upload Syllabus</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => Alert.alert('Add Class', 'Hook up your class creator as needed')}
-            >
-              <FolderIcon size={20} color="#111827" />
-              <Text style={styles.menuItemText}>Add Class</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => Alert.alert('Add Assignment', 'Hook up your manual add flow')}
-            >
-              <FileText size={20} color="#111827" />
-              <Text style={styles.menuItemText}>Add Assignment</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={styles.plusButton}
-          onPress={() => setPlusOpen((v) => !v)}
-          activeOpacity={0.9}
-        >
-          <Plus size={28} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Upload modal */}
-      <Modal visible={uploadOpen} transparent animationType="fade" onRequestClose={() => setUploadOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.sheet}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Upload Syllabus</Text>
-              <TouchableOpacity onPress={() => setUploadOpen(false)}>
-                <X size={22} color="#111827" />
-              </TouchableOpacity>
+      {/* Upload Modal */}
+      <Modal visible={uploadOpen} animationType="slide" transparent onRequestClose={closeUpload}>
+        <View style={s.modalOverlay}>
+          <View style={s.modal}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Upload Syllabus</Text>
+              <TouchableOpacity onPress={closeUpload}><X size={24} color="#111827" /></TouchableOpacity>
             </View>
 
-            <Text style={styles.sheetSub}>
-              Paste syllabus text or upload a file. We’ll extract assignments and dates automatically.
-            </Text>
+            {toReview ? (
+              <>
+                {/* REVIEW & EDIT */}
+                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8, gap: 8 }}>
+                  <TouchableOpacity style={s.secondaryBtn} onPress={startOver}>
+                    <Text style={s.secondaryBtnText}>Start Over</Text>
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.aiRow}>
-              <TouchableOpacity
-                onPress={() => setAiRepair((v) => !v)}
-                style={[styles.aiToggle, aiRepair && styles.aiToggleOn]}
-              >
-                <Wand2 size={18} color={aiRepair ? '#fff' : '#6B7280'} />
-                <Text style={[styles.aiToggleText, aiRepair && styles.aiToggleTextOn]}>AI Repair</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.label}>Course Name (optional)</Text>
-            <TextInput
-              placeholder="e.g., CS 326"
-              placeholderTextColor="#9CA3AF"
-              style={styles.input}
-              value={courseHint}
-              onChangeText={setCourseHint}
-            />
-
-            <Text style={styles.label}>Syllabus Text</Text>
-            <TextInput
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-              placeholder="Paste syllabus text here…"
-              placeholderTextColor="#9CA3AF"
-              style={[styles.input, { height: 120 }]}
-              value={syllabusText}
-              onChangeText={setSyllabusText}
-            />
-
-            <View style={styles.rowButtons}>
-              <TouchableOpacity style={styles.fileBtn} onPress={handlePickPdf}>
-                <FileText size={18} color="#111827" />
-                <Text style={styles.fileBtnText}>Upload PDF</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.fileBtn} onPress={handlePickImage}>
-                <ImageIcon size={18} color="#111827" />
-                <Text style={styles.fileBtnText}>Upload Image</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.sheetActions}>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.cancelBtn]}
-                onPress={() => setUploadOpen(false)}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.primaryBtn]}
-                onPress={handleParseText}
-                disabled={parsing}
-              >
-                <Text style={styles.primaryText}>{parsing ? 'Parsing…' : 'Parse Syllabus'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Draft editor modal */}
-      <Modal visible={draftsOpen} transparent animationType="slide" onRequestClose={() => setDraftsOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.sheet, { maxHeight: '90%' }]}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Review & Edit</Text>
-              <TouchableOpacity onPress={() => setDraftsOpen(false)}>
-                <X size={22} color="#111827" />
-              </TouchableOpacity>
-            </View>
-
-            <Text style={styles.sheetSub}>
-              Found {drafts.length} assignment{drafts.length === 1 ? '' : 's'}.
-            </Text>
-
-            <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ paddingVertical: 4 }}>
-              {drafts.map((d, idx) => (
-                <View key={d.id} style={styles.draftCard}>
-                  <Text style={styles.draftIndex}>#{idx + 1}</Text>
-
-                  <Text style={styles.label}>Title</Text>
-                  <TextInput
-                    value={d.title}
-                    onChangeText={(v) =>
-                      setDrafts((prev) => prev.map((x) => (x.id === d.id ? { ...x, title: v } : x)))
-                    }
-                    style={styles.input}
-                    placeholder="Assignment title"
-                    placeholderTextColor="#9CA3AF"
-                  />
-
-                  <View style={styles.row2}>
-                    <View style={{ flex: 1, marginRight: 6 }}>
-                      <Text style={styles.label}>Course</Text>
+                <ScrollView style={{ maxHeight: 420 }}>
+                  {toReview.map((e, idx) => (
+                    <View key={e.key} style={s.editCard}>
+                      <Text style={s.editLabel}>Title</Text>
                       <TextInput
-                        value={d.course}
-                        onChangeText={(v) =>
-                          setDrafts((prev) =>
-                            prev.map((x) => (x.id === d.id ? { ...x, course: v } : x)),
-                          )
-                        }
-                        style={styles.input}
-                        placeholder="e.g., CS 326"
-                        placeholderTextColor="#9CA3AF"
+                        style={s.input}
+                        value={e.title}
+                        onChangeText={(v) => updateEditable(idx, { title: v })}
+                        placeholder="e.g., Quiz 2 due 11:59pm"
+                        placeholderTextColor="#9ca3af"
                       />
-                    </View>
 
-                    <View style={{ flex: 1, marginLeft: 6 }}>
-                      <Text style={styles.label}>Type</Text>
+                      <View style={s.row}>
+                        <View style={{ flex: 1, marginRight: 8 }}>
+                          <Text style={s.editLabel}>Course</Text>
+                          <TextInput
+                            style={s.input}
+                            value={e.course}
+                            onChangeText={(v) => updateEditable(idx, { course: v })}
+                            placeholder="e.g., CS 326"
+                            placeholderTextColor="#9ca3af"
+                          />
+                        </View>
+                        <View style={{ flex: 1, marginLeft: 8 }}>
+                          <Text style={s.editLabel}>Type</Text>
+                          <TextInput
+                            style={s.input}
+                            value={e.type}
+                            onChangeText={(v) => updateEditable(idx, { type: v })}
+                            placeholder="Assignment, Reading, Quiz, Test..."
+                            placeholderTextColor="#9ca3af"
+                          />
+                        </View>
+                      </View>
+
+                      <View>
+                        <Text style={s.editLabel}>Due Date (MM/DD/YYYY)</Text>
+                        <TextInput
+                          style={s.input}
+                          value={
+                            e.dueDateISO
+                              ? new Date(e.dueDateISO).toLocaleDateString()
+                              : ""
+                          }
+                          onChangeText={(v) =>
+                            updateEditable(idx, { dueDateISO: parseToISO(v) })
+                          }
+                          placeholder="11/09/2025"
+                          placeholderTextColor="#9ca3af"
+                        />
+                      </View>
+
+                      <Text style={s.editLabel}>Description (optional)</Text>
                       <TextInput
-                        value={d.type}
-                        onChangeText={(v) =>
-                          setDrafts((prev) =>
-                            prev.map((x) =>
-                              x.id === d.id ? { ...x, type: (v || 'Assignment') as AssignmentType } : x,
-                            ),
-                          )
-                        }
-                        style={styles.input}
-                        placeholder="Assignment / Quiz / Test…"
-                        placeholderTextColor="#9CA3AF"
+                        style={[s.input, { height: 80 }]}
+                        value={e.description}
+                        onChangeText={(v) => updateEditable(idx, { description: v })}
+                        placeholder="Short note…"
+                        placeholderTextColor="#9ca3af"
+                        multiline
                       />
+
+                      <TouchableOpacity
+                        style={s.deleteBtn}
+                        onPress={() => deleteEditable(idx)}
+                      >
+                        <Trash2 size={16} color="#fff" />
+                        <Text style={s.deleteBtnText}>Delete</Text>
+                      </TouchableOpacity>
                     </View>
-                  </View>
+                  ))}
+                </ScrollView>
 
-                  <Text style={styles.label}>Due Date (YYYY-MM-DD)</Text>
-                  <TextInput
-                    value={d.dueISO || ''}
-                    onChangeText={(v) =>
-                      setDrafts((prev) => prev.map((x) => (x.id === d.id ? { ...x, dueISO: safeISO(v) } : x)))
-                    }
-                    style={styles.input}
-                    placeholder="2025-11-09"
-                    placeholderTextColor="#9CA3AF"
-                  />
-
-                  <Text style={styles.label}>Description (optional)</Text>
-                  <TextInput
-                    value={d.description || ''}
-                    onChangeText={(v) =>
-                      setDrafts((prev) => prev.map((x) => (x.id === d.id ? { ...x, description: v } : x)))
-                    }
-                    style={[styles.input, { height: 80 }]}
-                    multiline
-                    textAlignVertical="top"
-                    placeholder="Extra details…"
-                    placeholderTextColor="#9CA3AF"
-                  />
-
-                  <View style={styles.draftRowEnd}>
+                <TouchableOpacity style={s.primaryBtn} onPress={saveAllFromReview}>
+                  <Save size={18} color="#fff" />
+                  <Text style={s.primaryBtnText}>Save All</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                {/* INPUTS to PARSE */}
+                <View style={s.rowBetween}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={s.aiLabel}>AI Repair</Text>
                     <TouchableOpacity
-                      onPress={() => setDrafts((prev) => prev.filter((x) => x.id !== d.id))}
-                      style={styles.deleteIconBtn}
+                      style={[s.toggle, aiRepair && s.toggleOn]}
+                      onPress={() => setAiRepair((p) => !p)}
                     >
-                      <Trash2 size={18} color="#DC2626" />
+                      <View style={[s.knob, aiRepair && s.knobOn]} />
                     </TouchableOpacity>
                   </View>
+                  <TouchableOpacity onPress={startOver} style={s.secondaryBtn}>
+                    <Text style={s.secondaryBtnText}>Reset</Text>
+                  </TouchableOpacity>
                 </View>
-              ))}
-            </ScrollView>
 
-            <View style={styles.sheetActions}>
-              <TouchableOpacity
-                style={[styles.actionBtn, styles.cancelBtn]}
-                onPress={() => setDrafts([])}
-              >
-                <Text style={styles.cancelText}>Start Over</Text>
-              </TouchableOpacity>
+                <Text style={s.editLabel}>Course Name (optional)</Text>
+                <TextInput
+                  style={s.input}
+                  value={courseHint}
+                  onChangeText={setCourseHint}
+                  placeholder="e.g., Computer Science 101"
+                  placeholderTextColor="#9ca3af"
+                />
 
-              <TouchableOpacity style={[styles.actionBtn, styles.primaryBtn]} onPress={saveDrafts}>
-                <Save size={18} color="#fff" />
-                <Text style={[styles.primaryText, { marginLeft: 6 }]}>Save All</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+                <Text style={s.editLabel}>Syllabus Text</Text>
+                <TextInput
+                  style={[s.input, { height: 140 }]}
+                  value={syllabusText}
+                  onChangeText={setSyllabusText}
+                  multiline
+                  placeholder="Paste syllabus text here…"
+                  placeholderTextColor="#9ca3af"
+                />
 
-      {/* Class modal */}
-      <Modal visible={classOpen} transparent animationType="slide" onRequestClose={() => setClassOpen(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.sheet, { maxHeight: '85%', width: '92%' }]}>
-            <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>{classOpenName}</Text>
-              <TouchableOpacity onPress={() => setClassOpen(false)}>
-                <X size={22} color="#111827" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView>
-              {assignments.filter((a) => a.course === classOpenName).length === 0 ? (
-                <Empty text="No assignments for this class yet." />
-              ) : (
-                assignments
-                  .filter((a) => a.course === classOpenName)
-                  .sort((a, b) => (a.dueISO || '').localeCompare(b.dueISO || ''))
-                  .map((a) => (
-                    <View key={a.id} style={styles.taskCard}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.taskTitle}>{a.title}</Text>
-                        {!!a.dueISO && (
-                          <Text style={styles.taskCourse}>
-                            Due {new Date(a.dueISO).toLocaleDateString()}
-                          </Text>
-                        )}
-                        {!!a.type && <Text style={styles.taskType}>{a.type}</Text>}
-                      </View>
-                      <View
-                        style={[
-                          styles.dot,
-                          a.priority === 'high'
-                            ? { backgroundColor: '#EF4444' }
-                            : a.priority === 'medium'
-                            ? { backgroundColor: '#F59E0B' }
-                            : { backgroundColor: '#10B981' },
-                        ]}
-                      />
-                    </View>
-                  ))
-              )}
-            </ScrollView>
+                <View style={[s.row, { marginTop: 8, gap: 8 }]}>
+                  <TouchableOpacity style={s.secondaryBtn} onPress={pickPdfOrDoc}>
+                    <UploadCloud size={16} color="#111827" />
+                    <Text style={s.secondaryBtnText}>Upload PDF / Image</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.primaryBtn} onPress={parseText}>
+                    <CalIcon size={16} color="#fff" />
+                    <Text style={s.primaryBtnText}>Parse Syllabus</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -1002,187 +593,71 @@ export default function HomeScreen() {
   );
 }
 
-/** ========= styles ========= */
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F3F4F6' },
-  header: { paddingHorizontal: 20, paddingTop: 72, paddingBottom: 16 },
-  welcome: { fontSize: 32, fontWeight: '800', color: '#0F172A' },
-  sub: { marginTop: 6, color: '#6B7280' },
+/* ------------------------ Styles ------------------------ */
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#f3f4f6" },
+  header: { paddingHorizontal: 20, paddingTop: 48, paddingBottom: 16 },
+  title: { fontSize: 36, fontWeight: "800", color: "#111827" },
+  subtitle: { color: "#6b7280", marginTop: 6 },
 
-  statsRow: { flexDirection: 'row', gap: 12, paddingHorizontal: 20 },
+  cardRow: { flexDirection: "row", gap: 14, paddingHorizontal: 20 },
   statCard: {
     flex: 1,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-  },
-  statIconWrap: {
-    backgroundColor: '#E0E7FF',
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  statTitle: { color: '#111827', fontWeight: '600', marginBottom: 6 },
-  statNumber: { fontSize: 28, fontWeight: '800' },
-
-  section: { paddingHorizontal: 20, marginTop: 18 },
-  sectionTitle: { fontSize: 22, fontWeight: '800', color: '#111827', marginBottom: 12 },
-
-  chip: {
-    backgroundColor: '#E5E7EB',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginRight: 8,
-  },
-  chipActive: { backgroundColor: '#E0E7FF' },
-  chipText: { color: '#111827', fontWeight: '600' },
-  chipTextActive: { color: '#4F46E5', fontWeight: '800' },
-
-  emptyWrap: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyText: { color: '#6B7280' },
-
-  taskCard: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  taskTitle: { fontWeight: '700', color: '#111827' },
-  taskCourse: { color: '#6B7280', marginTop: 2 },
-  taskType: { color: '#6D28D9', marginTop: 2, fontWeight: '600' },
-  dot: { width: 10, height: 10, borderRadius: 5 },
-
-  classCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
+    backgroundColor: "#fff",
     padding: 16,
-    width: '100%',
-    minHeight: 120,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-  },
-  classHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  classTitle: { fontSize: 18, fontWeight: '800', color: '#111827', flex: 1 },
-  classPillsRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  pill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
-  pillOverdue: { backgroundColor: '#FDE8E8' },
-  pillUpcoming: { backgroundColor: '#EDE9FE' },
-  pillText: { fontWeight: '700', color: '#111827' },
-  classFooterRow: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  viewText: { color: '#6D28D9', fontWeight: '800' },
-
-  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  modeChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#E5E7EB' },
-  modeChipActive: { backgroundColor: '#EDE9FE' },
-  modeChipText: { color: '#111827', fontWeight: '600' },
-  modeChipTextActive: { color: '#6D28D9' },
-
-  monthHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  monthNav: {
-    backgroundColor: '#EEF2FF',
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10,
-  },
-  monthTitle: { fontSize: 24, fontWeight: '800', color: '#111827' },
-  weekHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  weekHeaderText: { width: `${100 / 7}%`, textAlign: 'center', color: '#6B7280', fontWeight: '700' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
-  cell: { width: `${100 / 7}%`, aspectRatio: 1, padding: 8, borderRadius: 14, backgroundColor: '#fff', marginBottom: 8 },
-  cellEmpty: { backgroundColor: 'transparent' },
-  cellSelected: { borderWidth: 2, borderColor: '#6D28D9' },
-  cellNum: { color: '#374151', fontWeight: '800' },
-  cellNumSelected: { color: '#6D28D9' },
-  cellDotRow: { position: 'absolute', right: 8, bottom: 8, gap: 4 },
-  cellDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#E0E7FF' },
-
-  dayTitle: { marginTop: 8, fontWeight: '800', color: '#111827' },
-  weekLabel: { fontWeight: '800', color: '#111827', marginBottom: 10 },
-
-  dayChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    marginRight: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  dayChipActive: { backgroundColor: '#EDE9FE' },
-  dayChipText: { color: '#111827', fontWeight: '700' },
-  dayChipTextActive: { color: '#6D28D9' },
-  smallDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#6D28D9' },
-
-  plusWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  plusButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#7C3AED',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 5,
-  },
-  plusMenu: {
-    marginBottom: 10,
-    backgroundColor: '#fff',
     borderRadius: 16,
-    padding: 10,
-    width: 280,
-    gap: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
   },
-  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 12, borderRadius: 12 },
-  menuItemText: { fontWeight: '700', color: '#111827' },
+  statIconWrapBlue: { width: 28, height: 28, borderRadius: 8, backgroundColor: "#eef2ff", alignItems: "center", justifyContent: "center" },
+  statIconWrapRed: { width: 28, height: 28, borderRadius: 8, backgroundColor: "#fee2e2", alignItems: "center", justifyContent: "center" },
+  statLabel: { marginTop: 8, color: "#374151" },
+  statNumber: { marginTop: 6, fontSize: 28, fontWeight: "800" },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 16 },
-  sheet: { width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 16 },
-  sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
-  sheetSub: { color: '#6B7280', marginTop: 6, marginBottom: 10 },
+  block: { marginTop: 20, marginHorizontal: 20, backgroundColor: "#fff", borderRadius: 16, padding: 16 },
+  blockTitle: { fontSize: 20, fontWeight: "800", color: "#111827" },
 
-  aiRow: { alignItems: 'flex-start', marginBottom: 8 },
-  aiToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#E5E7EB', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
-  aiToggleOn: { backgroundColor: '#6D28D9' },
-  aiToggleText: { color: '#111827', fontWeight: '700' },
-  aiToggleTextOn: { color: '#fff' },
+  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 24, backgroundColor: "#f3f4f6", marginRight: 8 },
+  chipActive: { backgroundColor: "#e9d5ff" },
+  chipText: { color: "#111827" },
+  chipTextActive: { fontWeight: "700", color: "#4c1d95" },
 
-  label: { color: '#6B7280', fontWeight: '700', marginTop: 8, marginBottom: 6 },
-  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: '#111827' },
-  rowButtons: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  fileBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 },
-  fileBtnText: { fontWeight: '700', color: '#111827' },
+  empty: { color: "#6b7280", marginTop: 8 },
 
-  sheetActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginTop: 14 },
-  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
-  cancelBtn: { backgroundColor: '#E5E7EB' },
-  primaryBtn: { backgroundColor: '#7C3AED' },
-  cancelText: { color: '#111827', fontWeight: '800' },
-  primaryText: { color: '#fff', fontWeight: '800' },
+  itemCard: { marginTop: 10, padding: 12, borderRadius: 12, backgroundColor: "#f9fafb" },
+  itemIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: "#e5e7eb", alignItems: "center", justifyContent: "center", marginRight: 10 },
+  itemTitle: { fontWeight: "700", color: "#111827" },
+  itemMeta: { color: "#6b7280", marginTop: 2 },
 
-  draftCard: { backgroundColor: '#F9FAFB', borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#E5E7EB' },
-  draftIndex: { color: '#6B7280', fontWeight: '700', marginBottom: 6 },
-  row2: { flexDirection: 'row' },
-  draftRowEnd: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
-  deleteIconBtn: { backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
+  bigAction: { flexDirection: "row", gap: 10, alignItems: "center", backgroundColor: "#fff", paddingVertical: 14, paddingHorizontal: 18, borderRadius: 14, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 10 },
+  bigActionText: { fontWeight: "700", color: "#111827" },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", alignItems: "center", justifyContent: "center", padding: 18 },
+  modal: { width: "100%", maxWidth: 700, backgroundColor: "#fff", borderRadius: 20, padding: 18, maxHeight: "85%" },
+  modalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  modalTitle: { fontSize: 20, fontWeight: "800", color: "#111827" },
+
+  aiLabel: { fontWeight: "700", color: "#111827" },
+  toggle: { width: 52, height: 30, borderRadius: 999, backgroundColor: "#d1d5db", padding: 2 },
+  toggleOn: { backgroundColor: "#8b5cf6" },
+  knob: { width: 26, height: 26, borderRadius: 999, backgroundColor: "#fff" },
+  knobOn: { transform: [{ translateX: 22 }] },
+
+  row: { flexDirection: "row", alignItems: "center" },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+
+  input: { borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#f9fafb", color: "#111827", marginBottom: 10 },
+
+  primaryBtn: { marginTop: 10, backgroundColor: "#7c3aed", paddingVertical: 12, borderRadius: 12, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 8 },
+  primaryBtnText: { color: "#fff", fontWeight: "700" },
+
+  secondaryBtn: { backgroundColor: "#eef2ff", paddingVertical: 10, paddingHorizontal: 12, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 8 },
+  secondaryBtnText: { color: "#111827", fontWeight: "700" },
+
+  editCard: { marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: "#f3f4f6" },
+  editLabel: { color: "#374151", fontWeight: "700", marginBottom: 6 },
+
+  deleteBtn: { marginTop: 6, backgroundColor: "#ef4444", borderRadius: 10, paddingVertical: 10, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 },
+  deleteBtnText: { color: "#fff", fontWeight: "700" },
 });

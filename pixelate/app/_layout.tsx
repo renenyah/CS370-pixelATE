@@ -43,10 +43,10 @@ export default function RootLayout() {
               <NavItem
                 label="Home"
                 Icon={HomeIcon}
-                active={pathname === "/" || pathname === "/index"}
+                active={pathname === "/home"}
                 onPress={() => {
                   setPlusOpen(false);
-                  router.push("/");
+                  router.push("/home");
                 }}
               />
 

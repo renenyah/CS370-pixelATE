@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,15 @@ import {
   StyleSheet,
   Alert,
   Modal,
-  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Home as HomeIcon,
-  Calendar as CalendarIcon,
   Folder as FolderIcon,
   Plus,
   Upload,
   ChevronRight,
   X,
   Clock,
-  Filter,
   Save,
   Trash2,
   ChevronLeft,
@@ -34,7 +31,6 @@ import * as ImagePicker from 'expo-image-picker';
 
 /** ========= Types ========= */
 type Priority = 'high' | 'medium' | 'low';
-type FilterType = 'today';
 type AssignmentType =
   | 'Assignment'
   | 'Discussion'
@@ -53,11 +49,11 @@ type FileAttachment = {
 };
 
 type Assignment = {
-  id: string; // use string to avoid key collisions
+  id: string;
   title: string;
   course: string;
-  dueISO?: string | null; // yyyy-mm-dd
-  dueTime?: string; // display only
+  dueISO?: string | null;
+  dueTime?: string;
   priority: Priority;
   attachments?: FileAttachment[];
   type?: AssignmentType;
@@ -68,91 +64,52 @@ type DueItem = {
   title: string;
   due_date_raw?: string;
   due_date_iso?: string;
-  page?: number | null;
-  source?: string;
   course?: string;
 };
 
 type ApiResponse = {
   status: 'ok' | 'error';
   message?: string;
-  pdf_name?: string;
-  image_name?: string;
   items?: DueItem[];
-  llm_used?: boolean;
-  llm_error?: string | null;
-};
-
-type Draft = {
-  id: string;
-  title: string;
-  course: string;
-  type: AssignmentType;
-  dueISO?: string | null;
-  description?: string;
 };
 
 /** ========= Backend config ========= */
-// On device set EXPO_PUBLIC_API_BASE to your machine’s LAN IP (no trailing slash)
 const API_BASE = (process.env.EXPO_PUBLIC_API_BASE || 'http://10.44.180.114:8000').replace(
   /\/+$/,
   '',
 );
 
-/** ========= Utilities ========= */
+/** ========= Utils ========= */
 const todayISO = new Date().toISOString().slice(0, 10);
+const TABBAR_HEIGHT = 64; // visual height of your tab bar
 
 function safeISO(input?: string | null): string | null {
   if (!input) return null;
-
-  // already ISO?
-  const isoMatch = input.match(/^\d{4}-\d{2}-\d{2}$/);
-  if (isoMatch) return isoMatch[0];
-
-  // try Date()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
   const d = new Date(input);
   if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
-
-  // try MM/DD/YYYY
-  const mdy = input.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  if (mdy) {
-    const m = Number(mdy[1]) - 1;
-    const day = Number(mdy[2]);
-    const y = mdy[3].length === 2 ? Number('20' + mdy[3]) : Number(mdy[3]);
-    const dt = new Date(y, m, day);
+  const m = input.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if (m) {
+    const mm = Number(m[1]) - 1;
+    const dd = Number(m[2]);
+    const yy = m[3].length === 2 ? Number('20' + m[3]) : Number(m[3]);
+    const dt = new Date(yy, mm, dd);
     if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
   }
-
   return null;
 }
-
-function isSameISO(a?: string | null, b?: string | null) {
-  return a && b ? a === b : false;
-}
-
-function isOverdue(iso?: string | null) {
-  if (!iso) return false;
-  return iso < todayISO;
-}
-
-function within7Days(iso?: string | null) {
+const isSameISO = (a?: string | null, b?: string | null) => (!!a && !!b ? a === b : false);
+const isOverdue = (iso?: string | null) => (iso ? iso < todayISO : false);
+const within7Days = (iso?: string | null) => {
   if (!iso) return false;
   const a = new Date(iso + 'T00:00:00');
   const b = new Date(todayISO + 'T00:00:00');
-  const diff = (a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24);
+  const diff = (a.getTime() - b.getTime()) / 86400000;
   return diff >= 0 && diff <= 7;
-}
-
-function priorityFromISO(iso?: string | null): Priority {
-  if (!iso) return 'low';
-  if (isSameISO(iso, todayISO)) return 'high';
-  if (within7Days(iso)) return 'medium';
-  return 'low';
-}
-
-function nextId(prefix = 'a'): string {
-  return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
-}
+};
+const priorityFromISO = (iso?: string | null): Priority =>
+  !iso ? 'low' : isSameISO(iso, todayISO) ? 'high' : within7Days(iso) ? 'medium' : 'low';
+const nextId = (p = 'a') => `${p}_${Math.random().toString(36).slice(2, 10)}`;
 
 async function postFileToBackend(
   endpointPath: string,
@@ -160,13 +117,12 @@ async function postFileToBackend(
 ): Promise<ApiResponse> {
   const url = `${API_BASE}${endpointPath}`;
   const fd = new FormData();
-  // Let RN set the boundary
   fd.append('file', { uri: file.uri, name: file.name, type: file.type } as any);
   const res = await fetch(url, { method: 'POST', body: fd });
   return (await res.json()) as ApiResponse;
 }
 
-/** ========= Small presentational components ========= */
+/** ========= Small UI helpers ========= */
 const Chip = ({
   label,
   active,
@@ -176,11 +132,7 @@ const Chip = ({
   active?: boolean;
   onPress?: () => void;
 }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    style={[styles.chip, active && styles.chipActive]}
-    activeOpacity={0.8}
-  >
+  <TouchableOpacity onPress={onPress} activeOpacity={0.85} style={[styles.chip, active && styles.chipActive]}>
     <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
   </TouchableOpacity>
 );
@@ -198,7 +150,7 @@ const Empty = ({ text }: { text: string }) => (
   </View>
 );
 
-/** ========= Class Folder Card ========= */
+/** ========= Class folder card ========= */
 function ClassFolderCard({
   course,
   overdueCount,
@@ -236,8 +188,10 @@ function ClassFolderCard({
   );
 }
 
-/** ========= main screen ========= */
+/** ========= Screen ========= */
 export default function HomeScreen() {
+  const insets = useSafeAreaInsets();
+
   /** Data */
   const [assignments, setAssignments] = useState<Assignment[]>([]);
 
@@ -253,13 +207,15 @@ export default function HomeScreen() {
 
   // Draft editor modal after Parse
   const [draftsOpen, setDraftsOpen] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [drafts, setDrafts] = useState<
+    { id: string; title: string; course: string; type: AssignmentType; dueISO?: string | null; description?: string }[]
+  >([]);
 
   // Class assignments modal
   const [classOpen, setClassOpen] = useState(false);
   const [classOpenName, setClassOpenName] = useState('');
 
-  // Calendar in-page
+  // Calendar state
   const [calMode, setCalMode] = useState<'month' | 'week' | 'day'>('month');
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
@@ -275,13 +231,11 @@ export default function HomeScreen() {
     return Array.from(s);
   }, [assignments]);
 
-  // Home filter chips (Today view)
   const [todayCourse, setTodayCourse] = useState<string | 'All'>('All');
 
   const dueTodayForCourse = useMemo(() => {
     const items = assignments.filter((a) => isSameISO(a.dueISO || null, todayISO));
-    if (todayCourse === 'All') return items;
-    return items.filter((a) => a.course === todayCourse);
+    return todayCourse === 'All' ? items : items.filter((a) => a.course === todayCourse);
   }, [assignments, todayCourse]);
 
   const upcoming7 = useMemo(
@@ -297,8 +251,8 @@ export default function HomeScreen() {
       copyToCacheDirectory: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
-
     const a = result.assets[0];
+
     setParsing(true);
     try {
       const resp = await postFileToBackend(
@@ -309,19 +263,18 @@ export default function HomeScreen() {
           type: a.mimeType || 'application/pdf',
         },
       );
-
       if (resp.status !== 'ok') {
         Alert.alert('Upload failed', resp.message || 'Server error');
         return;
       }
-      const ds: Draft[] = (resp.items || []).map((it) => ({
-        id: nextId('d'),
-        title: it.title || 'Untitled',
-        course: courseHint || it.course || '',
-        type: 'Assignment',
-        dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
-        description: '',
-      }));
+      const ds =
+        (resp.items || []).map((it) => ({
+          id: nextId('d'),
+          title: it.title || 'Untitled',
+          course: courseHint || it.course || '',
+          type: 'Assignment' as AssignmentType,
+          dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
+        })) ?? [];
       setDrafts(ds);
       setDraftsOpen(true);
     } catch (e: any) {
@@ -352,19 +305,18 @@ export default function HomeScreen() {
           type: asset.type || 'image/jpeg',
         },
       );
-
       if (resp.status !== 'ok') {
         Alert.alert('Upload failed', resp.message || 'Server error');
         return;
       }
-      const ds: Draft[] = (resp.items || []).map((it) => ({
-        id: nextId('d'),
-        title: it.title || 'Untitled',
-        course: courseHint || it.course || '',
-        type: 'Assignment',
-        dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
-        description: '',
-      }));
+      const ds =
+        (resp.items || []).map((it) => ({
+          id: nextId('d'),
+          title: it.title || 'Untitled',
+          course: courseHint || it.course || '',
+          type: 'Assignment' as AssignmentType,
+          dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
+        })) ?? [];
       setDrafts(ds);
       setDraftsOpen(true);
     } catch (e: any) {
@@ -391,14 +343,14 @@ export default function HomeScreen() {
         Alert.alert('Parse failed', json.message || 'Server error');
         return;
       }
-      const ds: Draft[] = (json.items || []).map((it) => ({
-        id: nextId('d'),
-        title: it.title || 'Untitled',
-        course: courseHint || it.course || '',
-        type: 'Assignment',
-        dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
-        description: '',
-      }));
+      const ds =
+        (json.items || []).map((it) => ({
+          id: nextId('d'),
+          title: it.title || 'Untitled',
+          course: courseHint || it.course || '',
+          type: 'Assignment' as AssignmentType,
+          dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
+        })) ?? [];
       setDrafts(ds);
       setDraftsOpen(true);
     } catch (e: any) {
@@ -435,26 +387,19 @@ export default function HomeScreen() {
 
   /** ======= Calendar helpers ======= */
   const monthLabel = useMemo(
-    () =>
-      cursor.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'long',
-      }),
+    () => cursor.toLocaleDateString(undefined, { year: 'numeric', month: 'long' }),
     [cursor],
   );
-
   function daysInMonth(d: Date) {
     const y = d.getFullYear();
     const m = d.getMonth();
     return new Date(y, m + 1, 0).getDate();
   }
-
   function startWeekday(d: Date) {
     const t = new Date(d);
     t.setDate(1);
-    return t.getDay(); // 0..6, Sun..Sat
+    return t.getDay();
   }
-
   const monthGrid = useMemo(() => {
     const count = daysInMonth(cursor);
     const start = startWeekday(cursor);
@@ -475,21 +420,22 @@ export default function HomeScreen() {
   /** ======= Render ======= */
   const now = new Date();
   const timeLabel = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
-  const dateLabel = now.toLocaleDateString([], {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-  });
+  const dateLabel = now.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.welcome}>Welcome! 📚</Text>
-        <Text style={styles.sub}>{timeLabel} • {dateLabel}</Text>
+        <Text style={styles.sub}>
+          {timeLabel} • {dateLabel}
+        </Text>
       </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 160 }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: TABBAR_HEIGHT + insets.bottom + 140 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statCard}>
@@ -500,7 +446,7 @@ export default function HomeScreen() {
             <Text style={[styles.statNumber, { color: '#4F46E5' }]}>{upcoming7.length}</Text>
           </View>
 
-          <View style={styles.statCard}>
+            <View style={styles.statCard}>
             <View style={[styles.statIconWrap, { backgroundColor: '#FEE2E2' }]}>
               <Clock size={20} color="#DC2626" />
             </View>
@@ -509,17 +455,12 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Today section */}
+        {/* Today */}
         <Section title="Today’s Assignments">
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
             <Chip label="All" active={todayCourse === 'All'} onPress={() => setTodayCourse('All')} />
             {courses.map((c, i) => (
-              <Chip
-                key={`${c}-${i}`}
-                label={c || 'Untitled'}
-                active={todayCourse === c}
-                onPress={() => setTodayCourse(c)}
-              />
+              <Chip key={`${c}-${i}`} label={c || 'Untitled'} active={todayCourse === c} onPress={() => setTodayCourse(c)} />
             ))}
           </ScrollView>
 
@@ -550,7 +491,7 @@ export default function HomeScreen() {
           )}
         </Section>
 
-        {/* Classes section (longer folder cards) */}
+        {/* Classes */}
         <Section title="Classes">
           {courses.length === 0 ? (
             <Empty text="No classes yet. Upload a syllabus or add assignments!" />
@@ -577,7 +518,7 @@ export default function HomeScreen() {
           )}
         </Section>
 
-        {/* Calendar section (Month / Week / Day) */}
+        {/* Calendar */}
         <Section title="Calendar">
           <View style={styles.modeRow}>
             {(['month', 'week', 'day'] as const).map((m) => (
@@ -607,7 +548,9 @@ export default function HomeScreen() {
                 >
                   <ChevronLeft size={18} color="#6D28D9" />
                 </TouchableOpacity>
-                <Text style={styles.monthTitle}>{monthLabel}</Text>
+                <Text style={styles.monthTitle}>
+                  {cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                </Text>
                 <TouchableOpacity
                   onPress={() => {
                     const d = new Date(cursor);
@@ -636,7 +579,7 @@ export default function HomeScreen() {
                   return (
                     <TouchableOpacity
                       key={`${iso ?? 'blank'}-${i}`}
-                      activeOpacity={0.8}
+                      activeOpacity={0.85}
                       onPress={() => iso && setSelectedISO(iso)}
                       style={[styles.cell, sel && styles.cellSelected, !iso && styles.cellEmpty]}
                     >
@@ -645,12 +588,13 @@ export default function HomeScreen() {
                           <Text style={[styles.cellNum, sel && styles.cellNumSelected]}>
                             {iso.slice(-2).replace(/^0/, '')}
                           </Text>
-                          {has && <View style={styles.cellDotRow}>
-                            {/* show up to 2 dots like your reference */}
-                            {onDay.slice(0, 2).map((a) => (
-                              <View key={a.id} style={styles.cellDot} />
-                            ))}
-                          </View>}
+                          {has && (
+                            <View style={styles.cellDotRow}>
+                              {onDay.slice(0, 2).map((a) => (
+                                <View key={a.id} style={styles.cellDot} />
+                              ))}
+                            </View>
+                          )}
                         </>
                       )}
                     </TouchableOpacity>
@@ -658,7 +602,6 @@ export default function HomeScreen() {
                 })}
               </View>
 
-              {/* Day detail */}
               <View style={{ marginTop: 12 }}>
                 <Text style={styles.dayTitle}>
                   {new Date(selectedISO).toLocaleDateString([], {
@@ -765,8 +708,14 @@ export default function HomeScreen() {
         </Section>
       </ScrollView>
 
-      {/* Floating + menu */}
-      <View style={styles.plusWrap}>
+      {/* Floating + menu — sits ABOVE the tab bar */}
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.plusWrap,
+          { bottom: insets.bottom + TABBAR_HEIGHT + 8 },
+        ]}
+      >
         {plusOpen && (
           <View style={styles.plusMenu}>
             <TouchableOpacity
@@ -1094,7 +1043,7 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: '#E0E7FF' },
   chipText: { color: '#111827', fontWeight: '600' },
-  chipTextActive: { color: '#4F46E5' },
+  chipTextActive: { color: '#4F46E5', fontWeight: '800' },
 
   emptyWrap: {
     backgroundColor: '#fff',
@@ -1117,7 +1066,6 @@ const styles = StyleSheet.create({
   taskType: { color: '#6D28D9', marginTop: 2, fontWeight: '600' },
   dot: { width: 10, height: 10, borderRadius: 5 },
 
-  // Class folder card – longer
   classCard: {
     backgroundColor: '#fff',
     borderRadius: 20,
@@ -1138,14 +1086,8 @@ const styles = StyleSheet.create({
   classFooterRow: { marginTop: 16, flexDirection: 'row', alignItems: 'center', gap: 6 },
   viewText: { color: '#6D28D9', fontWeight: '800' },
 
-  // Calendar
   modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  modeChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-    backgroundColor: '#E5E7EB',
-  },
+  modeChip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: '#E5E7EB' },
   modeChipActive: { backgroundColor: '#EDE9FE' },
   modeChipText: { color: '#111827', fontWeight: '600' },
   modeChipTextActive: { color: '#6D28D9' },
@@ -1163,14 +1105,7 @@ const styles = StyleSheet.create({
   weekHeader: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
   weekHeaderText: { width: `${100 / 7}%`, textAlign: 'center', color: '#6B7280', fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
-  cell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
-    padding: 8,
-    borderRadius: 14,
-    backgroundColor: '#fff',
-    marginBottom: 8,
-  },
+  cell: { width: `${100 / 7}%`, aspectRatio: 1, padding: 8, borderRadius: 14, backgroundColor: '#fff', marginBottom: 8 },
   cellEmpty: { backgroundColor: 'transparent' },
   cellSelected: { borderWidth: 2, borderColor: '#6D28D9' },
   cellNum: { color: '#374151', fontWeight: '800' },
@@ -1196,8 +1131,7 @@ const styles = StyleSheet.create({
   dayChipTextActive: { color: '#6D28D9' },
   smallDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#6D28D9' },
 
-  // + menu
-  plusWrap: { position: 'absolute', bottom: 28, left: 0, right: 0, alignItems: 'center' },
+  plusWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   plusButton: {
     width: 64,
     height: 64,
@@ -1218,100 +1152,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 12,
   },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
+  menuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 10, paddingVertical: 12, borderRadius: 12 },
   menuItemText: { fontWeight: '700', color: '#111827' },
 
-  // Modals / sheets
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-  },
-  sheet: {
-    width: '100%',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  sheet: { width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 16 },
   sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   sheetTitle: { fontSize: 18, fontWeight: '800', color: '#111827' },
   sheetSub: { color: '#6B7280', marginTop: 6, marginBottom: 10 },
 
   aiRow: { alignItems: 'flex-start', marginBottom: 8 },
-  aiToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#E5E7EB',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
-  },
+  aiToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#E5E7EB', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12 },
   aiToggleOn: { backgroundColor: '#6D28D9' },
   aiToggleText: { color: '#111827', fontWeight: '700' },
   aiToggleTextOn: { color: '#fff' },
 
   label: { color: '#6B7280', fontWeight: '700', marginTop: 8, marginBottom: 6 },
-  input: {
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#111827',
-  },
+  input: { backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, color: '#111827' },
   rowButtons: { flexDirection: 'row', gap: 10, marginTop: 10 },
-  fileBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F3F4F6',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
+  fileBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 },
   fileBtnText: { fontWeight: '700', color: '#111827' },
 
   sheetActions: { flexDirection: 'row', justifyContent: 'space-between', gap: 10, marginTop: 14 },
-  actionBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
+  actionBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   cancelBtn: { backgroundColor: '#E5E7EB' },
   primaryBtn: { backgroundColor: '#7C3AED' },
   cancelText: { color: '#111827', fontWeight: '800' },
   primaryText: { color: '#fff', fontWeight: '800' },
 
-  // Draft editor
-  draftCard: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
+  draftCard: { backgroundColor: '#F9FAFB', borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#E5E7EB' },
   draftIndex: { color: '#6B7280', fontWeight: '700', marginBottom: 6 },
   row2: { flexDirection: 'row' },
   draftRowEnd: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
-  deleteIconBtn: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
+  deleteIconBtn: { backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10 },
 });

@@ -1,7 +1,35 @@
 import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
+import { format, isPast, isToday, isTomorrow } from "date-fns";
 
-export default function AssignmentCard({ title, dueDate, course }: any) {
+interface AssignmentCardProps {
+  assignment: {
+    id: string;
+    title: string;
+    course_name?: string;
+    assignment_type?: string;
+    due_date: string;
+    description?: string;
+    completed: boolean;
+  };
+  onToggleComplete: (id: string, completed: boolean) => void;
+}
+
+export default function AssignmentCard({ assignment, onToggleComplete }: AssignmentCardProps) {
+  
+  const dueDate = new Date(assignment.due_date);
+
+  const isOverdue = isPast(dueDate) && !assignment.completed;
+  const dueToday = isToday(dueDate);
+  const dueTomorrow = isTomorrow(dueDate);
+
+  const getDueLabel = () => {
+    if(dueToday) return "Due Today";
+    if(dueTomorrow) return "Due Tomorrow";
+    if(isOverdue) return "Overdue";
+    return format(dueDate, "MMM d, yyyy");
+  }
+  
   return (
     <View style={styles.card}>
       <View>

@@ -1,0 +1,210 @@
+app/_layout.tsx
+
+What it does:
+
+Defines the global layout for the app using expo-router.
+
+Wraps the entire app in AssignmentsProvider so all screens can access shared assignment data.
+
+Renders the bottom navigation bar (Home, Classes, Calendar, Profile) plus the floating + button.
+
+Hides the bottom nav and plus menu on the login and signup routes, so those screens are full-screen.
+
+
+components/AssignmentsContext.tsx
+
+What it does:
+
+Creates a React context to store all assignments for the current user.
+
+Exposes a useAssignments() hook that screens/components can call to read/write assignment data.
+
+Provides helper functions for:
+
+Normalizing dates to ISO format (safeISO)
+
+Checking if a date is today, overdue, or within 7 days
+
+Assigning a priority (high, medium, low) based on due date
+
+AssignmentsProvider wraps the app and manages the list of assignments in state and a helper to add assignments from parsed drafts.
+
+
+components/PlusMenu.tsx
+
+What it does:
+
+UI for the floating + menu that slides up when the center button is pressed.
+
+Shows actions like Upload Syllabus, Add Class, and Add Assignment.
+
+When Upload Syllabus is chosen, opens the upload flow modal where the user can paste text or upload PDFs/images (and optionally enable AI repair).
+
+
+components/UploadSyllabusModal.tsx (if you kept it separate)
+
+What it does:
+
+Full-screen or sheet-style modal that appears when the user chooses Upload Syllabus from the plus menu.
+
+Contains:
+
+AI toggle (decides whether to call the LLM repair on the backend)
+
+Input for course name
+
+Text area for pasting raw syllabus text
+
+Buttons to Upload PDF and Upload Image
+
+Handles calling the backend endpoints:
+
+POST /assignments/pdf for PDFs
+
+POST /assignments/image for images (OCR)
+
+POST /assignments/text for pasted text
+
+Receives parsed assignments, turns them into drafts, and passes them into the context via addAssignmentsFromDrafts.
+
+
+components/CalendarView.tsx (if present)
+
+What it does:
+
+Renders the calendar UI with Month / Week / Day toggle chips.
+
+Shows a month grid similar to a standard calendar, highlighting days that have assignments.
+
+When a date is selected, shows the list of assignments due that day (with course and type).
+
+Used by the app/calendar.tsx screen.
+
+
+components/ClassList.tsx (if present)
+
+What it does:
+
+Shows a scrollable list of “folder card” rectangles, one per class.
+
+Each card displays:
+
+Class name
+
+Count of Overdue and Upcoming assignments for that class
+
+When a class is pressed, opens a view of all assignments for that specific class (overdue + upcoming).
+
+app/index.tsx (current “Home” or redirect)
+
+Depending on your latest setup, this does one of two things:
+
+If it’s your Home screen:
+
+Displays:
+
+“Welcome” header
+
+Stats for Upcoming (Next 7 Days) and Overdue
+
+Section for Today’s Assignments, filterable by class
+
+Reads assignments from AssignmentsContext to show what’s due today, what’s coming up, and what’s overdue.
+
+If you changed it to a redirect:
+
+Immediately redirects the root / route to /login so the login screen appears first.
+
+
+app/home.tsx (if you moved Home here)
+
+What it does:
+
+Main dashboard screen for the user after they log in.
+
+Shows:
+
+Quick stats (upcoming vs overdue)
+
+Today’s assignments (filterable by class)
+
+Shortcut sections to classes and calendar views
+
+Acts as the main landing page after the login/directions flow.
+
+
+app/classes.tsx
+
+What it does:
+
+Screen that lists all classes the user has assignments for.
+
+Renders large full-width “folder” cards, each representing a class.
+
+When a class card is tapped, shows all assignments related to that class (including overdue and upcoming).
+
+
+app/calendar.tsx
+
+What it does:
+
+Screen used to display the assignments in a calendar layout.
+
+Uses the calendar view component (if separated) to show Month / Week / Day views.
+
+Lets the user tap on a date to see all assignments due on that date.
+
+
+app/profile.tsx
+
+What it does:
+
+Screen for basic user profile UI (purely frontend for now).
+
+Lets the user edit:
+
+Name
+
+Email
+
+Password (just a placeholder until real auth is connected)
+
+Shows a circular initials avatar generated from the user’s name.
+
+For now, clicking Save just shows a stub alert; it’s meant to be wired to Supabase later.
+
+
+app/login.tsx
+
+What it does:
+
+Login screen UI for email + password (no real auth yet).
+
+Includes:
+
+Email input
+
+Password input
+
+“Log in” button
+
+Link to go to the Sign up screen
+
+When the user taps Log in and passes basic validation, it:
+
+Shows a small “how to use the app” popup/guide
+
+After the user dismisses the guide, navigates to the main Home screen (e.g., /home or / depending on your setup).
+
+
+app/signup.tsx
+
+What it does:
+
+Similar to login.tsx but for creating a new account UI (frontend only for now).
+
+Collects name, email, and password fields.
+
+On Sign Up, it also shows the short “how to use the app” popup/directions.
+
+After the guide is dismissed, it routes the user into the main app (Home screen). 

@@ -223,10 +223,22 @@ export default function PlusMenu({ onClose }: Props) {
               </TouchableOpacity>
             </View>
 
-
-            <Text style={styles.simpleText}>
-              Later, this will let you create a class with a color and name.
+            <Text style={styles.sheetSub}>
+              Create your class with a color and name.
             </Text>
+            
+            {/* Course name */}
+            <Text style={styles.label}>
+              Course Name
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., CS 326"
+              placeholderTextColor="#9CA3AF"
+              value={courseName}
+              onChangeText={setCourseName}
+            />
+
 
             {/* Footer buttons */}
             <View style={styles.actionsRow}>
@@ -257,20 +269,52 @@ export default function PlusMenu({ onClose }: Props) {
         animationType="fade"
         onRequestClose={closeAll}
       >
-        <View style={styles.simpleOverlay}>
-          <View style={styles.simpleBox}>
-            <Text style={styles.simpleTitle}>Add Assignment</Text>
+        <View style={styles.smallOverlay}>
+          <View style={styles.smallSheet}>
+            
+            {/* Header */}
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Add Assignement</Text>
+              <TouchableOpacity onPress={closeAll}>
+                <X size={22} color='#111827'/>
+              </TouchableOpacity>
+            </View>
+            
             <Text style={styles.simpleText}>
-              Later, this will let you manually enter an assignment with a due
-              date.
+              Manually enter an assignment with a due date.
             </Text>
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={closeAll}
-              activeOpacity={0.9}
-            >
-              <Text style={styles.primaryText}>Got it</Text>
-            </TouchableOpacity>
+
+            {/* Assignment name */}
+            <Text style={styles.label}>
+              Assignment Name
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., Homework 1"
+              placeholderTextColor="#9CA3AF"
+              value={courseName}
+              onChangeText={setCourseName}
+            />
+
+
+            {/* Footer buttons */}
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                activeOpacity={0.9}
+                onPress={closeAll}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.primaryBtn}
+                activeOpacity={0.9}
+                onPress={handleParse}
+              >
+                <Text style={styles.primaryText}>Add Assignment</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>

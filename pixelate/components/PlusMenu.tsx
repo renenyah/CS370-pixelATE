@@ -52,6 +52,7 @@ type ApiResponse = {
   llm_error?: string | null;
 };
 
+// CHANGE THIS TO YOUR ACTUAL BACKEND URL
 const API_BASE = "http://172.24.227.154:8000".replace(/\/+$/, "");
 
 export default function PlusMenu({ onClose }: Props) {
@@ -65,6 +66,7 @@ export default function PlusMenu({ onClose }: Props) {
   const [courseName, setCourseName] = useState("");
   const [syllabusText, setSyllabusText] = useState("");
   const [parsing, setParsing] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState(""); // NEW: Show what's happening
 
   const [draftsOpen, setDraftsOpen] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
@@ -76,6 +78,7 @@ export default function PlusMenu({ onClose }: Props) {
     setDraftsOpen(false);
     setDrafts([]);
     setParsing(false);
+    setLoadingMessage("");
     onClose();
   };
 
@@ -107,6 +110,27 @@ export default function PlusMenu({ onClose }: Props) {
     setDraftsOpen(true);
   };
 
+  // NEW: Helper function with timeout
+  const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs = 60000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out. The server might be slow or unreachable.');
+      }
+      throw error;
+    }
+  };
+
   const handleUploadPdf = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -117,6 +141,8 @@ export default function PlusMenu({ onClose }: Props) {
       const asset = result.assets[0];
 
       setParsing(true);
+      setLoadingMessage("Uploading PDF..."); // NEW
+
       const formData = new FormData();
       formData.append(
         "file",
@@ -127,15 +153,21 @@ export default function PlusMenu({ onClose }: Props) {
         } as any
       );
 
-      const res = await fetch(
-        `${API_BASE}/assignments/pdf?use_llm=${String(
-          aiRepair
-        )}`,
+      setLoadingMessage(aiRepair ? "Processing PDF with AI (this may take 30-60 seconds)..." : "Processing PDF..."); // NEW
+
+      const res = await fetchWithTimeout(
+        `${API_BASE}/assignments/pdf?use_llm=${String(aiRepair)}`,
         {
           method: "POST",
           body: formData,
-        }
+        },
+        90000 // 90 second timeout for PDFs with AI
       );
+
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+
       const json = (await res.json()) as ApiResponse;
 
       if (json.status !== "ok") {
@@ -146,9 +178,14 @@ export default function PlusMenu({ onClose }: Props) {
       buildDraftsFromItems(json, json.items || []);
       setUploadOpen(false);
     } catch (e: any) {
-      Alert.alert("Error", e?.message || String(e));
+      console.error("PDF upload error:", e);
+      Alert.alert(
+        "Error",
+        e?.message || "Failed to upload PDF. Check your network connection and backend URL."
+      );
     } finally {
       setParsing(false);
+      setLoadingMessage("");
     }
   };
 
@@ -162,6 +199,8 @@ export default function PlusMenu({ onClose }: Props) {
       const asset = result.assets[0];
 
       setParsing(true);
+      setLoadingMessage("Uploading image..."); // NEW
+
       const formData = new FormData();
       formData.append(
         "file",
@@ -172,14 +211,25 @@ export default function PlusMenu({ onClose }: Props) {
         } as any
       );
 
+      setLoadingMessage(aiRepair ? "Processing image with AI & OCR (30-60 seconds)..." : "Running OCR on image..."); // NEW
+
       const url = `${API_BASE}/assignments/image?preprocess=${encodeURIComponent(
         "screenshot"
       )}&use_llm=${String(aiRepair)}`;
 
-      const res = await fetch(url, {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetchWithTimeout(
+        url,
+        {
+          method: "POST",
+          body: formData,
+        },
+        90000 // 90 second timeout
+      );
+
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+
       const json = (await res.json()) as ApiResponse;
 
       if (json.status !== "ok") {
@@ -190,9 +240,14 @@ export default function PlusMenu({ onClose }: Props) {
       buildDraftsFromItems(json, json.items || []);
       setUploadOpen(false);
     } catch (e: any) {
-      Alert.alert("Error", e?.message || String(e));
+      console.error("Image upload error:", e);
+      Alert.alert(
+        "Error",
+        e?.message || "Failed to upload image. Check your network connection and backend URL."
+      );
     } finally {
       setParsing(false);
+      setLoadingMessage("");
     }
   };
 
@@ -207,11 +262,22 @@ export default function PlusMenu({ onClose }: Props) {
 
     try {
       setParsing(true);
-      const res = await fetch(`${API_BASE}/assignments/text`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: syllabusText }),
-      });
+      setLoadingMessage("Parsing text..."); // NEW
+
+      const res = await fetchWithTimeout(
+        `${API_BASE}/assignments/text`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: syllabusText }),
+        },
+        30000 // 30 second timeout for text
+      );
+
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${res.statusText}`);
+      }
+
       const json = (await res.json()) as ApiResponse;
 
       if (json.status !== "ok") {
@@ -222,9 +288,14 @@ export default function PlusMenu({ onClose }: Props) {
       buildDraftsFromItems(json, json.items || []);
       setUploadOpen(false);
     } catch (e: any) {
-      Alert.alert("Error", e?.message || String(e));
+      console.error("Text parse error:", e);
+      Alert.alert(
+        "Error",
+        e?.message || "Failed to parse text. Check your network connection and backend URL."
+      );
     } finally {
       setParsing(false);
+      setLoadingMessage("");
     }
   };
 
@@ -284,13 +355,13 @@ export default function PlusMenu({ onClose }: Props) {
           <View style={styles.sheet}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>Upload Syllabus</Text>
-              <TouchableOpacity onPress={closeAll}>
+              <TouchableOpacity onPress={closeAll} disabled={parsing}>
                 <X size={22} color="#111827" />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.sheetSub}>
-              Paste your syllabus text or upload a file. We’ll
+              Paste your syllabus text or upload a file. We'll
               extract assignments and due dates. Toggle AI Repair to
               let the model clean up messy dates.
             </Text>
@@ -304,12 +375,13 @@ export default function PlusMenu({ onClose }: Props) {
                   true: "#7C3AED",
                 }}
                 thumbColor="#FFFFFF"
+                disabled={parsing}
               />
               <Text style={styles.aiLabel}>AI Repair</Text>
             </View>
 
             <Text style={styles.label}>
-              Course Name (optional — we’ll try to detect it)
+              Course Name (optional — we'll try to detect it)
             </Text>
             <TextInput
               style={styles.input}
@@ -317,6 +389,7 @@ export default function PlusMenu({ onClose }: Props) {
               placeholderTextColor="#9CA3AF"
               value={courseName}
               onChangeText={setCourseName}
+              editable={!parsing}
             />
 
             <Text style={styles.label}>Syllabus Text</Text>
@@ -328,13 +401,15 @@ export default function PlusMenu({ onClose }: Props) {
               textAlignVertical="top"
               value={syllabusText}
               onChangeText={setSyllabusText}
+              editable={!parsing}
             />
 
             <View style={styles.fileButtons}>
               <TouchableOpacity
-                style={styles.fileBtn}
+                style={[styles.fileBtn, parsing && styles.fileBtnDisabled]}
                 activeOpacity={0.9}
                 onPress={handleUploadPdf}
+                disabled={parsing}
               >
                 <View style={styles.fileIconCircle}>
                   <Paperclip size={18} color="#111827" />
@@ -348,9 +423,10 @@ export default function PlusMenu({ onClose }: Props) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.fileBtn}
+                style={[styles.fileBtn, parsing && styles.fileBtnDisabled]}
                 activeOpacity={0.9}
                 onPress={handleUploadImage}
+                disabled={parsing}
               >
                 <View style={styles.fileIconCircle}>
                   <ImageIcon size={18} color="#111827" />
@@ -364,6 +440,14 @@ export default function PlusMenu({ onClose }: Props) {
               </TouchableOpacity>
             </View>
 
+            {/* NEW: Loading indicator with message */}
+            {parsing && (
+              <View style={styles.loadingBox}>
+                <ActivityIndicator size="small" color="#7C3AED" />
+                <Text style={styles.loadingText}>{loadingMessage}</Text>
+              </View>
+            )}
+
             <View style={styles.actionsRow}>
               <TouchableOpacity
                 style={styles.cancelBtn}
@@ -375,16 +459,16 @@ export default function PlusMenu({ onClose }: Props) {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[styles.primaryBtn, parsing && styles.primaryBtnDisabled]}
                 activeOpacity={0.9}
                 onPress={handleParseText}
                 disabled={parsing}
               >
                 {parsing ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <Text style={styles.primaryText}>
-                    Parse Syllabus
+                    Parse Text
                   </Text>
                 )}
               </TouchableOpacity>
@@ -573,6 +657,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
+  fileBtnDisabled: {
+    opacity: 0.5,
+  },
   fileIconCircle: {
     width: 32,
     height: 32,
@@ -590,6 +677,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#6B7280",
     marginTop: 2,
+  },
+  loadingBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#EEF2FF",
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  loadingText: {
+    flex: 1,
+    color: "#4F46E5",
+    fontSize: 13,
+    fontWeight: "600",
   },
   actionsRow: {
     flexDirection: "row",
@@ -613,6 +715,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     justifyContent: "center",
+  },
+  primaryBtnDisabled: {
+    opacity: 0.6,
   },
   cancelText: {
     fontWeight: "700",

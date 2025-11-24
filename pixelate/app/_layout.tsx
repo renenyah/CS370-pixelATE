@@ -22,67 +22,74 @@ export default function RootLayout() {
   const pathname = usePathname();
   const [plusOpen, setPlusOpen] = useState(false);
 
+  // Hide nav + plus menu on login / signup screens
+  const isAuthRoute =
+    pathname === "/login" || pathname === "/signup";
+
   return (
     <AssignmentsProvider>
       <View style={{ flex: 1 }}>
-        {/* Expo Router handles screens from the file system.
-           We don't set initialRouteName here; instead we redirect from index.tsx */}
+        {/* Expo Router handles all screens from app/ */}
         <Stack screenOptions={{ headerShown: false }} />
 
-        {plusOpen && (
-          <PlusMenu onClose={() => setPlusOpen(false)} />
+        {/* Only show PlusMenu + bottom nav when NOT on auth screens */}
+        {!isAuthRoute && (
+          <>
+            {plusOpen && (
+              <PlusMenu onClose={() => setPlusOpen(false)} />
+            )}
+
+            <View style={styles.navBar}>
+              <NavItem
+                label="Home"
+                Icon={HomeIcon}
+                active={pathname === "/" || pathname === "/index"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  router.push("/");
+                }}
+              />
+
+              <NavItem
+                label="Classes"
+                Icon={FolderIcon}
+                active={pathname === "/classes"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  router.push("/classes");
+                }}
+              />
+
+              <TouchableOpacity
+                style={styles.plusButton}
+                activeOpacity={0.9}
+                onPress={() => setPlusOpen((prev) => !prev)}
+              >
+                <Plus size={28} color="#fff" />
+              </TouchableOpacity>
+
+              <NavItem
+                label="Calendar"
+                Icon={CalendarIcon}
+                active={pathname === "/calendar"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  router.push("/calendar");
+                }}
+              />
+
+              <NavItem
+                label="Profile"
+                Icon={UserIcon}
+                active={pathname === "/profile"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  router.push("/profile");
+                }}
+              />
+            </View>
+          </>
         )}
-
-        {/* Bottom nav - always visible, exactly like you had it */}
-        <View style={styles.navBar}>
-          <NavItem
-            label="Home"
-            Icon={HomeIcon}
-            active={pathname === "/home"}
-            onPress={() => {
-              setPlusOpen(false);
-              router.push("/home");
-            }}
-          />
-
-          <NavItem
-            label="Classes"
-            Icon={FolderIcon}
-            active={pathname === "/classes"}
-            onPress={() => {
-              setPlusOpen(false);
-              router.push("/classes");
-            }}
-          />
-
-          <TouchableOpacity
-            style={styles.plusButton}
-            activeOpacity={0.9}
-            onPress={() => setPlusOpen((prev) => !prev)}
-          >
-            <Plus size={28} color="#fff" />
-          </TouchableOpacity>
-
-          <NavItem
-            label="Calendar"
-            Icon={CalendarIcon}
-            active={pathname === "/calendar"}
-            onPress={() => {
-              setPlusOpen(false);
-              router.push("/calendar");
-            }}
-          />
-
-          <NavItem
-            label="Profile"
-            Icon={UserIcon}
-            active={pathname === "/profile"}
-            onPress={() => {
-              setPlusOpen(false);
-              router.push("/profile");
-            }}
-          />
-        </View>
       </View>
     </AssignmentsProvider>
   );

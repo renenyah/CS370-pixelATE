@@ -21,7 +21,7 @@ import {
 } from "lucide-react-native";
 
 import { colors } from "../constant/colors";
-import { API_BASE } from "../constant/api";
+import { buildUrl } from "../constant/api";
 import {
   Draft,
   safeISO,
@@ -115,6 +115,7 @@ export default function UploadSyllabusModal({
       return;
     }
 
+    console.log("makeDraftsFromItems got", ds.length, "items");
     setDrafts(ds);
     setStep("review");
   };
@@ -137,15 +138,15 @@ export default function UploadSyllabusModal({
     field: keyof Draft,
     value: string
   ) => {
-    setDrafts(
-      drafts.map((d) =>
+    setDrafts((prev) =>
+      prev.map((d) =>
         d.id === id ? { ...d, [field]: value } : d
       )
     );
   };
 
   const deleteDraft = (id: string) => {
-    setDrafts(drafts.filter((d) => d.id !== id));
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
   };
 
   // ------------ PDF ------------
@@ -169,10 +170,9 @@ export default function UploadSyllabusModal({
         } as any
       );
 
-      const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/pdf?use_llm=${
-        aiRepair ? "true" : "false"
-      }`;
+      const url = buildUrl(
+        `/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`
+      );
       console.log("PDF →", url);
 
       const resp = await fetch(url, {
@@ -202,6 +202,10 @@ export default function UploadSyllabusModal({
       }
 
       console.log("PDF resp →", JSON.stringify(json));
+
+      if (json.status && json.status !== "ok") {
+        return handleBackendError(json.message);
+      }
 
       const items = Array.isArray(json?.items)
         ? json.items
@@ -244,10 +248,11 @@ export default function UploadSyllabusModal({
         } as any
       );
 
-      const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/image?preprocess=${encodeURIComponent(
-        "screenshot"
-      )}&use_llm=${aiRepair ? "true" : "false"}`;
+      const url = buildUrl(
+        `/assignments/image?preprocess=${encodeURIComponent(
+          "screenshot"
+        )}&use_llm=${aiRepair ? "true" : "false"}`
+      );
       console.log("IMAGE →", url);
 
       const resp = await fetch(url, {
@@ -278,6 +283,10 @@ export default function UploadSyllabusModal({
 
       console.log("Image resp →", json);
 
+      if (json.status && json.status !== "ok") {
+        return handleBackendError(json.message);
+      }
+
       const items = Array.isArray(json?.items)
         ? json.items
         : Array.isArray(json)
@@ -304,8 +313,7 @@ export default function UploadSyllabusModal({
     }
     setParsing(true);
     try {
-      const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/text`;
+      const url = buildUrl("/assignments/text");
       console.log("TEXT →", url);
 
       const resp = await fetch(url, {
@@ -336,6 +344,10 @@ export default function UploadSyllabusModal({
       }
 
       console.log("Text resp →", json);
+
+      if (json.status && json.status !== "ok") {
+        return handleBackendError(json.message);
+      }
 
       const items = Array.isArray(json?.items)
         ? json.items

@@ -18,10 +18,10 @@ import {
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
-import { AuthProvider } from "../context/AuthContext";
-import { colors } from "../constant/colors";
+import { AuthProvider } from "../components/AuthContext"; // 🟣 make sure this path matches your file
+import { colors } from "../constant/colors";              // 🟣 matches your current setup
 
-const AUTH_ROUTES = ["/", "/login", "/signup"];
+const AUTH_ROUTES = ["/login", "/signup"];
 export const NAV_HEIGHT = 88;
 
 export default function RootLayout() {
@@ -37,10 +37,10 @@ export default function RootLayout() {
     <AuthProvider>
       <AssignmentsProvider>
         <View style={{ flex: 1 }}>
-          {/* All screens rendered here by expo-router */}
+          {/* All screens in the app */}
           <Stack screenOptions={{ headerShown: false }} />
 
-          {/* + menu (only on main app screens) */}
+          {/* + menu (only on main app screens, not login/signup) */}
           {!isAuthRoute && plusOpen && (
             <PlusMenu
               onClose={() => setPlusOpen(false)}
@@ -50,18 +50,18 @@ export default function RootLayout() {
               }}
               onAddClass={() => {
                 setPlusOpen(false);
-                // later: navigate to a "new class" screen
-                // router.push("/classes/new");
+                // later: push to a "create class" screen
+                router.push("/classes");
               }}
               onAddAssignment={() => {
                 setPlusOpen(false);
-                // later: navigate to a "new assignment" screen
-                // router.push("/assignments/new");
+                // later: push to "create assignment" or stay on home
+                router.push("/home");
               }}
             />
           )}
 
-          {/* Upload Syllabus modal lives at root so it persists while navigating */}
+          {/* Upload syllabus modal lives at root */}
           {!isAuthRoute && (
             <UploadSyllabusModal
               visible={uploadOpen}
@@ -79,7 +79,7 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  router.push("/home"); // app/(protected)/home.tsx
+                  router.push("/home");
                 }}
               />
 
@@ -90,7 +90,7 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  router.push("/classes"); // app/(protected)/classes.tsx
+                  router.push("/classes");
                 }}
               />
 
@@ -109,7 +109,7 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  router.push("/calendar"); // app/(protected)/calendar.tsx
+                  router.push("/calendar");
                 }}
               />
 
@@ -120,7 +120,7 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  router.push("/profile"); // app/(protected)/profile.tsx
+                  router.push("/profile");
                 }}
               />
             </View>
@@ -133,7 +133,7 @@ export default function RootLayout() {
 
 type NavItemProps = {
   label: string;
-  Icon: any;
+  Icon: React.ComponentType<{ size: number; color: string }>;
   active: boolean;
   onPress: () => void;
 };
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: NAV_HEIGHT,
-    backgroundColor: "#0B1220", // dark footer; you can swap to a palette color if you want
+    backgroundColor: "#0B1220",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-around",

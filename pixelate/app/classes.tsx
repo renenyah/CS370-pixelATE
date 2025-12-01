@@ -14,7 +14,7 @@ import {
   within7Days,
 } from "../components/AssignmentsContext";
 import ClassFolderCard from "../components/ClassFolderCard";
-import { colors } from "../lib/colors";
+import { colors } from "../constant/colors";
 
 type ClassFolder = {
   id: string;

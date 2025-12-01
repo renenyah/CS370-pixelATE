@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { Folder as FolderIcon, ChevronRight } from "lucide-react-native";
-import { colors } from "../lib/colors";
+import { colors } from "../constant/colors";
 
 type Props = {
   course: string;

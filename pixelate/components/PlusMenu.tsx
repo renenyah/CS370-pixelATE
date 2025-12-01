@@ -13,7 +13,7 @@ import {
 } from "lucide-react-native";
 
 import UploadSyllabusModal from "./UploadSyllabusModal";
-import { colors } from "../lib/colors";
+import { colors } from "../constant/colors";
 
 type Props = {
   onClose: () => void;

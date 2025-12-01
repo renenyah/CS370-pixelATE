@@ -16,7 +16,7 @@ import {
   useAssignments,
   safeISO,
 } from "./AssignmentsContext";
-import { colors } from "../lib/colors";
+import { colors } from "../constant/colors";
 
 type Props = {
   visible: boolean;

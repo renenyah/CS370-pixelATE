@@ -20,8 +20,8 @@ import {
   Trash2,
 } from "lucide-react-native";
 
-import { colors } from "../lib/colors";
-import { API_BASE } from "../lib/api";
+import { colors } from "../constant/colors";
+import { API_BASE } from "../constant/api";
 import {
   Draft,
   safeISO,

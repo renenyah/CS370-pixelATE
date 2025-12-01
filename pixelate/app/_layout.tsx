@@ -18,7 +18,7 @@ import {
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
-import { colors } from "../lib/colors";
+import { colors } from "../constant/colors";
 
 const AUTH_ROUTES = ["/login", "/signup"];
 export const NAV_HEIGHT = 88;

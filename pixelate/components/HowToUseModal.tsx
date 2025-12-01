@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import { colors } from "../lib/colors";
+import { colors } from "../constant/colors";
 
 type Props = {
   visible: boolean;

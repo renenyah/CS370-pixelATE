@@ -1,0 +1,483 @@
+[
+    {
+      "syllabus": "CS 101 - Introduction to Programming\n\nAssignments:\n| Assignment | Due Date |\n|------------|----------|\n| HW1        | 9/15/24  |\n| Project 1  | 10/1/24  |\n| Final Exam | 12/10/24 |",
+      "output": {
+        "className": "CS 101 - Introduction to Programming",
+        "assignments": [
+          {
+            "assignmentName": "HW1",
+            "dueDate": "2024-09-15",
+            "className": "CS 101 - Introduction to Programming"
+          },
+          {
+            "assignmentName": "Project 1",
+            "dueDate": "2024-10-01",
+            "className": "CS 101 - Introduction to Programming"
+          },
+          {
+            "assignmentName": "Final Exam",
+            "dueDate": "2024-12-10",
+            "className": "CS 101 - Introduction to Programming"
+          }
+        ]
+      }
+    },
+    {
+      "syllabus": "MATH 201 - Calculus II\n\nHomework 1: Due September 20, 2024\nMidterm Exam: October 15, 2024\nFinal Project: December 5, 2024",
+      "output": {
+        "className": "MATH 201 - Calculus II",
+        "assignments": [
+          {
+            "assignmentName": "Homework 1",
+            "dueDate": "2024-09-20",
+            "className": "MATH 201 - Calculus II"
+          },
+          {
+            "assignmentName": "Midterm Exam",
+            "dueDate": "2024-10-15",
+            "className": "MATH 201 - Calculus II"
+          },
+          {
+            "assignmentName": "Final Project",
+            "dueDate": "2024-12-05",
+            "className": "MATH 201 - Calculus II"
+          }
+        ]
+      }
+    },
+    {
+      "syllabus": "ENG 150 - Creative Writing\n\nCourse Schedule:\nShort Story Draft - Sep 30\nPoetry Assignment - Oct 20\nFinal Portfolio - Dec 1",
+      "output": {
+        "className": "ENG 150 - Creative Writing",
+        "assignments": [
+          {
+            "assignmentName": "Short Story Draft",
+            "dueDate": "2024-09-30",
+            "className": "ENG 150 - Creative Writing"
+          },
+          {
+            "assignmentName": "Poetry Assignment",
+            "dueDate": "2024-10-20",
+            "className": "ENG 150 - Creative Writing"
+          },
+          {
+            "assignmentName": "Final Portfolio",
+            "dueDate": "2024-12-01",
+            "className": "ENG 150 - Creative Writing"
+          }
+        ]
+      }
+    },
+    {
+        "syllabus": "AMST 201: Introduction to American Studies\n\nB. Educational Reflection (5%)\nDeadline: Friday, September 12, 11:59PM\nIn 500 words, write a critical reflection on how your education and personal experiences have so far reflected and shaped how you see the world and how you see yourself.\n\nC. Show and Tell Presentation (20%)\nA sign-up sheet will be circulated in the second week of classes\nStudents will present for 10 minutes on an object (either digital or physical) that comes to represent America from a global, transnational, or otherwise multitudinous perspective.\n\nD. Three Response Projects (60% total; 20% each)\nDeadline for Response Project One: Friday, September 26, 11:59PM\nDeadline for Response Project Two: Friday, October 31, 11:59PM\nDeadline for Response Project Three: Friday, December 12, 11:59PM\nAt the end of each unit, students will work on a response project, either an essay, 1000-1250 words, or a creative work.",
+        "output": {
+          "className": "AMST 201: Introduction to American Studies",
+          "assignments": [
+            {
+              "assignmentName": "Educational Reflection",
+              "dueDate": "2024-09-12",
+              "className": "AMST 201: Introduction to American Studies"
+            },
+            {
+              "assignmentName": "Show and Tell Presentation",
+              "dueDate": "TBA",
+              "className": "AMST 201: Introduction to American Studies"
+            },
+            {
+              "assignmentName": "Response Project One",
+              "dueDate": "2024-09-26",
+              "className": "AMST 201: Introduction to American Studies"
+            },
+            {
+              "assignmentName": "Response Project Two",
+              "dueDate": "2024-10-31",
+              "className": "AMST 201: Introduction to American Studies"
+            },
+            {
+              "assignmentName": "Response Project Three",
+              "dueDate": "2024-12-12",
+              "className": "AMST 201: Introduction to American Studies"
+            }
+          ]
+        }
+      },
+      {
+        "syllabus": "History Course Schedule\n\nWeek 3\nSept 8: Quiz and Discussion of Revel readings\nSept 10: Quiz and Discussion of Eltis\n\nWeek 4\nSept 17: Quiz and Discussion of Ulrich\n\nWeek 5\nSept 24: Quiz and discussion of Wood and Lepore\n\nWeek 6\nSept 29: Imperial Crisis\nOct 1: Essay Exam—includes readings and lecture notes from Aug 27 through Sept 24; bring pen or pencil to exam\n\nWeek 7\nOct 8: Quiz and Discussion of Alfred Young, The Shoemaker and the Tea Party\n\nWeek 11\nNov 3: Second Essay Exam covering Imperial Crisis through Federal Constitution and Bill of Rights, CR readings, Young, lectures through Oct 27. Bring pen or pencil",
+        "output": {
+          "className": "History Course",
+          "assignments": [
+            {
+              "assignmentName": "Quiz - Revel readings",
+              "dueDate": "2024-09-08",
+              "className": "History Course"
+            },
+            {
+              "assignmentName": "Quiz - Eltis",
+              "dueDate": "2024-09-10",
+              "className": "History Course"
+            },
+            {
+              "assignmentName": "Quiz - Ulrich",
+              "dueDate": "2024-09-17",
+              "className": "History Course"
+            },
+            {
+              "assignmentName": "Quiz - Wood and Lepore",
+              "dueDate": "2024-09-24",
+              "className": "History Course"
+            },
+            {
+              "assignmentName": "Essay Exam",
+              "dueDate": "2024-10-01",
+              "className": "History Course"
+            },
+            {
+              "assignmentName": "Quiz - The Shoemaker and the Tea Party",
+              "dueDate": "2024-10-08",
+              "className": "History Course"
+            },
+            {
+              "assignmentName": "Second Essay Exam",
+              "dueDate": "2024-11-03",
+              "className": "History Course"
+            }
+          ]
+        }
+      },
+      {
+        "syllabus": "MATH 315-2: Numerical Analysis - Fall 2025\n\n| Date | Day | Assignment |\n|------|-----|------------|\n| Oct 23 | Thu | Curve Fitting — Problem Set 5 (in-class activity) |\n| Oct 30 | Thu | Midterm 2 (Weeks 6-10) — Problem Set 6 assigned |\n| Nov 6 | Thu | Root Finding — Problem Set 6 due |\n| Nov 13 | Thu | Root Finding — Problem Set 7 (in-class activity), Problem Set 8 assigned |\n| Nov 20 | Thu | Univariate Minimization — Problem Set 8 due, Problem Set 9 assigned |\n| Dec 4 | Thu | Review — Problem Set 9 due |\n| Dec 11 | Thu | Final Exam (11:30 AM - 2:00 PM) |",
+        "output": {
+          "className": "MATH 315-2: Numerical Analysis",
+          "assignments": [
+            {
+              "assignmentName": "Problem Set 5 (Curve Fitting)",
+              "dueDate": "2025-10-23",
+              "className": "MATH 315-2: Numerical Analysis"
+            },
+            {
+              "assignmentName": "Midterm 2",
+              "dueDate": "2025-10-30",
+              "className": "MATH 315-2: Numerical Analysis"
+            },
+            {
+              "assignmentName": "Problem Set 6",
+              "dueDate": "2025-11-06",
+              "className": "MATH 315-2: Numerical Analysis"
+            },
+            {
+              "assignmentName": "Problem Set 7 (in-class activity)",
+              "dueDate": "2025-11-13",
+              "className": "MATH 315-2: Numerical Analysis"
+            },
+            {
+              "assignmentName": "Problem Set 8",
+              "dueDate": "2025-11-20",
+              "className": "MATH 315-2: Numerical Analysis"
+            },
+            {
+              "assignmentName": "Problem Set 9",
+              "dueDate": "2025-12-04",
+              "className": "MATH 315-2: Numerical Analysis"
+            },
+            {
+              "assignmentName": "Final Exam",
+              "dueDate": "2025-12-11",
+              "className": "MATH 315-2: Numerical Analysis"
+            }
+          ]
+        }
+      },
+      {
+        "syllabus": "Drawing Course - Rome\n\nWeek 4 (Monday Feb. 10)\nAssignment 3: Slower drawings that include more information.\n\nWeek 5 (Mon. Feb. 17)\nAssignment 4: Five drawings with light and shadows, with high contrast of light and dark (even a still life with a spot light on it).\n\nWeek 6 (Mon. Feb. 24)\nAssignment 5: Five Roman views (can one still find a way to be personal in a city that has been depicted so many times before?)\n\nWeek 7 (Mon. March 3)\nAssignment: Continue drawing during the break. Use the sketchbook to create a visual diary.\n\nWeek 8 (Mon. Mar. 17)\nAssignment 6: Three figures from the past.\n\nWeek 9 (Mon. Mar. 24)\nAssignment 8: Draw during the break, on your travels.\n\nWeek 10 (Mon. Mar. 31)\nAssignment 9: Views of Rome.\n\nWeek 11 (Mon. April 7)\nAssignment 10: Everyday life in Rome.\n\nWeek 12 (Mon. April 14)\nAssignment 11: Drawing from nature.",
+        "output": {
+          "className": "Drawing Course - Rome",
+          "assignments": [
+            {
+              "assignmentName": "Assignment 3: Slower drawings",
+              "dueDate": "2025-02-10",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 4: Light and shadows drawings",
+              "dueDate": "2025-02-17",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 5: Five Roman views",
+              "dueDate": "2025-02-24",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment: Visual diary during break",
+              "dueDate": "2025-03-03",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 6: Three figures from the past",
+              "dueDate": "2025-03-17",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 8: Draw during break travels",
+              "dueDate": "2025-03-24",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 9: Views of Rome",
+              "dueDate": "2025-03-31",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 10: Everyday life in Rome",
+              "dueDate": "2025-04-07",
+              "className": "Drawing Course - Rome"
+            },
+            {
+              "assignmentName": "Assignment 11: Drawing from nature",
+              "dueDate": "2025-04-14",
+              "className": "Drawing Course - Rome"
+            }
+          ]
+        }
+      },
+      {
+        "syllabus": "FA25_CS_326_1 - Assignments\n\nUpcoming Assignments:\n\nhw5\nDue Nov 21 at 11:59pm | -/100 pts\n\nReadings8\nDue Dec 1 at 11:59pm | -/10 pts\n\nhw6\nNot available until Nov 22 at 12am | Due Dec 5 at 11:59pm | -/100 pts\n\nFinal Exam\nDue Dec 11 at 3pm | -/100 pts",
+        "output": {
+          "className": "CS 326: Computer Science",
+          "assignments": [
+            {
+              "assignmentName": "hw5",
+              "dueDate": "2025-11-21",
+              "className": "CS 326: Computer Science"
+            },
+            {
+              "assignmentName": "Readings8",
+              "dueDate": "2025-12-01",
+              "className": "CS 326: Computer Science"
+            },
+            {
+              "assignmentName": "hw6",
+              "dueDate": "2025-12-05",
+              "className": "CS 326: Computer Science"
+            },
+            {
+              "assignmentName": "Final Exam",
+              "dueDate": "2025-12-11",
+              "className": "CS 326: Computer Science"
+            }
+          ]
+        }
+      },
+      {
+        "syllabus": "Week-by-week Scrum course schedule (Fall 2025)...",
+        "output": {
+          "className": "Scrum Course",
+          "assignments": [
+            {
+              "assignmentName": "Team registration",
+              "dueDate": "2025-09-09",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Project proposal",
+              "dueDate": "2025-09-09",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Scrum exam",
+              "dueDate": "2025-09-16",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Presentation feedback",
+              "dueDate": "2025-09-16",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 1 artifacts & feedback",
+              "dueDate": "2025-09-23",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 2 artifacts & feedback",
+              "dueDate": "2025-09-30",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 3 artifacts & feedback",
+              "dueDate": "2025-10-07",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 4 artifacts & feedback",
+              "dueDate": "2025-10-21",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 5 artifacts & feedback",
+              "dueDate": "2025-10-28",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 6 artifacts & feedback",
+              "dueDate": "2025-11-04",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 7 artifacts & feedback",
+              "dueDate": "2025-11-11",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 8 artifacts & feedback",
+              "dueDate": "2025-11-18",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 9 artifacts & feedback",
+              "dueDate": "2025-11-25",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 10 artifacts & feedback",
+              "dueDate": "2025-12-02",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Final project deliverables",
+              "dueDate": "2025-12-09",
+              "className": "Scrum Course"
+            }
+          ]
+        }
+      },
+      
+      {
+        "syllabus": "Scrum Course — Fall 2025\n\n| Week | Date | Assignment |\n|------|------------|-------------------------------|\n| 1 | Sep 9 (Tue) | Team registration |\n| 1 | Sep 9 (Tue) | Project proposal |\n| 2 | Sep 16 (Tue) | Scrum exam |\n| 2 | Sep 16 (Tue) | Presentation feedback |\n| 3 | Sep 23 (Tue) | Sprint 1 artifacts & feedback |\n| 4 | Sep 30 (Tue) | Sprint 2 artifacts & feedback |\n| 5 | Oct 7 (Tue) | Sprint 3 artifacts & feedback |\n| 7 | Oct 21 (Tue) | Sprint 4 artifacts & feedback |\n| 8 | Oct 28 (Tue) | Sprint 5 artifacts & feedback |\n| 9 | Nov 4 (Tue) | Sprint 6 artifacts & feedback |\n| 10 | Nov 11 (Tue) | Sprint 7 artifacts & feedback |\n| 11 | Nov 18 (Tue) | Sprint 8 artifacts & feedback |\n| 12 | Nov 25 (Tue) | Sprint 9 artifacts & feedback |\n| 13 | Dec 2 (Tue) | Sprint 10 artifacts & feedback |\n| 14 | Dec 9 (Tue) | Final project deliverables |",
+        
+        "output": {
+          "className": "Scrum Course",
+          "assignments": [
+            {
+              "assignmentName": "Team registration",
+              "dueDate": "2025-09-09",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Project proposal",
+              "dueDate": "2025-09-09",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Scrum exam",
+              "dueDate": "2025-09-16",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Presentation feedback",
+              "dueDate": "2025-09-16",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 1 artifacts & feedback",
+              "dueDate": "2025-09-23",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 2 artifacts & feedback",
+              "dueDate": "2025-09-30",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 3 artifacts & feedback",
+              "dueDate": "2025-10-07",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 4 artifacts & feedback",
+              "dueDate": "2025-10-21",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 5 artifacts & feedback",
+              "dueDate": "2025-10-28",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 6 artifacts & feedback",
+              "dueDate": "2025-11-04",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 7 artifacts & feedback",
+              "dueDate": "2025-11-11",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 8 artifacts & feedback",
+              "dueDate": "2025-11-18",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 9 artifacts & feedback",
+              "dueDate": "2025-11-25",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Sprint 10 artifacts & feedback",
+              "dueDate": "2025-12-02",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            },
+            {
+              "assignmentName": "Final project deliverables",
+              "dueDate": "2025-12-09",
+              "dueTimeEST": "2:30 PM",
+              "className": "Scrum Course"
+            }
+          ]
+        }
+      },
+      {
+        "syllabus": "Educational Reflection due Sept. 12, Response Project One due Sept. 26, Response Project Two due Oct. 31, Response Project Three due Dec. 12.",
+        "output": {
+          "className": "Unknown Class",
+          "assignments": [
+            {
+              "assignmentName": "Educational Reflection",
+              "dueDate": "2025-09-12",
+              "className": "Unknown Class"
+            },
+            {
+              "assignmentName": "Response Project One",
+              "dueDate": "2025-09-26",
+              "className": "Unknown Class"
+            },
+            {
+              "assignmentName": "Response Project Two",
+              "dueDate": "2025-10-31",
+              "className": "Unknown Class"
+            },
+            {
+              "assignmentName": "Response Project Three",
+              "dueDate": "2025-12-12",
+              "className": "Unknown Class"
+            }
+          ]
+        }
+      }
+      
+  ]

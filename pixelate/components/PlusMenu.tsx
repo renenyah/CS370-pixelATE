@@ -17,6 +17,9 @@ import { colors } from "../constant/colors";
 
 type Props = {
   onClose: () => void;
+  onUploadSyllabus: () => void;
+  onAddClass: () => void;
+  onAddAssignment: () => void;
 };
 
 export default function PlusMenu({ onClose }: Props) {

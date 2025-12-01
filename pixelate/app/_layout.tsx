@@ -18,7 +18,7 @@ import {
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
-import { colors } from "../constant/colors";
+import { colors } from "../lib/colors";
 
 const AUTH_ROUTES = ["/login", "/signup"];
 export const NAV_HEIGHT = 88;
@@ -33,8 +33,9 @@ export default function RootLayout() {
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
   return (
-    <AssignmentsProvider>
-      <View style={{ flex: 1 }}>
+    <AuthProvider>
+      <AssignmentsProvider>
+        <View style={{ flex: 1 }}>
         {/* All screens */}
         <Stack screenOptions={{ headerShown: false }} />
 
@@ -123,6 +124,7 @@ export default function RootLayout() {
         )}
       </View>
     </AssignmentsProvider>
+  </AuthProvider>
   );
 }
 

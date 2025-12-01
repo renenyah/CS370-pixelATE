@@ -18,7 +18,7 @@ import {
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
-import { AuthProvider } from "../context/AuthContext"; // 🟣 make sure this path matches your file
+import { AuthProvider } from "../context/AuthContext"; 
 import { colors } from "../constant/colors";              // 🟣 matches your current setup
 
 const AUTH_ROUTES = ["/login", "/signup"];

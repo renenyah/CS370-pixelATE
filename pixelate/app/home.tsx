@@ -1,16 +1,18 @@
-// app/index.tsx
+// app/home.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  TouchableOpacity,
 } from "react-native";
 import {
   Clock,
   AlertCircle,
   ArrowRight,
 } from "lucide-react-native";
+import { useLocalSearchParams } from "expo-router";
 import {
   useAssignments,
   todayISO,
@@ -22,15 +24,57 @@ import {
 export default function HomeScreen() {
   const { assignments } = useAssignments();
   const [now, setNow] = useState(new Date());
-  const [todayCourse, setTodayCourse] = useState<string | "All">(
-    "All"
-  );
+  const [todayCourse, setTodayCourse] = useState<string | "All">("All");
+
+  // Read `showTour` query param: /home?showTour=1
+  const params = useLocalSearchParams<{ showTour?: string }>();
+  const [showTour, setShowTour] = useState(params.showTour === "1");
+  const [tourStep, setTourStep] = useState(0);
+
+  const tourSteps = [
+    {
+      key: "home",
+      title: "Home",
+      description:
+        "See what’s due today, what’s coming up this week, and anything overdue.",
+    },
+    {
+      key: "classes",
+      title: "Classes",
+      description:
+        "Tap the Classes tab to open a folder view of each course and all its assignments.",
+    },
+    {
+      key: "plus",
+      title: "+ menu",
+      description:
+        "Use the big + button to upload a syllabus, add a class, or add a single assignment.",
+    },
+    {
+      key: "calendar",
+      title: "Calendar",
+      description:
+        "The Calendar tab shows your assignments on a monthly, weekly, or daily calendar.",
+    },
+    {
+      key: "profile",
+      title: "Profile",
+      description:
+        "Update your basic info in Profile. Later this will connect to Supabase auth.",
+    },
+  ];
+
+  const handleSkipTour = () => setShowTour(false);
+  const handleNextTour = () => {
+    if (tourStep >= tourSteps.length - 1) {
+      setShowTour(false);
+    } else {
+      setTourStep((i) => i + 1);
+    }
+  };
 
   useEffect(() => {
-    const id = setInterval(
-      () => setNow(new Date()),
-      60 * 1000
-    );
+    const id = setInterval(() => setNow(new Date()), 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -63,9 +107,7 @@ export default function HomeScreen() {
 
   const dueToday = useMemo(() => {
     if (todayCourse === "All") return dueTodayAll;
-    return dueTodayAll.filter(
-      (a) => a.course === todayCourse
-    );
+    return dueTodayAll.filter((a) => a.course === todayCourse);
   }, [dueTodayAll, todayCourse]);
 
   const upcoming7 = useMemo(
@@ -85,155 +127,182 @@ export default function HomeScreen() {
   );
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 120 }}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.welcome}>Welcome! 📚</Text>
-        <Text style={styles.sub}>
-          {timeLabel} • {dateLabel}
-        </Text>
-      </View>
-
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <View style={styles.statCard}>
-          <View style={styles.statIconWrap}>
-            <Clock size={20} color="#4F46E5" />
-          </View>
-          <Text style={styles.statTitle}>
-            Upcoming (Next 7 Days)
-          </Text>
-          <Text
-            style={[
-              styles.statNumber,
-              { color: "#4F46E5" },
-            ]}
-          >
-            {upcoming7.length}
+    <View style={styles.screen}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 120 }}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.welcome}>Welcome! 📚</Text>
+          <Text style={styles.sub}>
+            {timeLabel} • {dateLabel}
           </Text>
         </View>
 
-        <View style={styles.statCard}>
-          <View
-            style={[
-              styles.statIconWrap,
-              { backgroundColor: "#FEE2E2" },
-            ]}
-          >
-            <AlertCircle size={20} color="#DC2626" />
+        {/* Stats */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <View style={styles.statIconWrap}>
+              <Clock size={20} color="#4F46E5" />
+            </View>
+            <Text style={styles.statTitle}>
+              Upcoming (Next 7 Days)
+            </Text>
+            <Text
+              style={[
+                styles.statNumber,
+                { color: "#4F46E5" },
+              ]}
+            >
+              {upcoming7.length}
+            </Text>
           </View>
-          <Text style={styles.statTitle}>Overdue</Text>
-          <Text
-            style={[
-              styles.statNumber,
-              { color: "#DC2626" },
-            ]}
-          >
-            {overdue.length}
-          </Text>
+
+          <View style={styles.statCard}>
+            <View
+              style={[
+                styles.statIconWrap,
+                { backgroundColor: "#FEE2E2" },
+              ]}
+            >
+              <AlertCircle size={20} color="#DC2626" />
+            </View>
+            <Text style={styles.statTitle}>Overdue</Text>
+            <Text
+              style={[
+                styles.statNumber,
+                { color: "#DC2626" },
+              ]}
+            >
+              {overdue.length}
+            </Text>
+          </View>
         </View>
-      </View>
 
-      {/* Today */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          Today’s Assignments
-        </Text>
+        {/* Today */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Today’s Assignments</Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={{ marginBottom: 12 }}
-        >
-          <Chip
-            label="All"
-            active={todayCourse === "All"}
-            onPress={() => setTodayCourse("All")}
-          />
-          {courses.map((c) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 12 }}
+          >
             <Chip
-              key={c}
-              label={c}
-              active={todayCourse === c}
-              onPress={() => setTodayCourse(c)}
+              label="All"
+              active={todayCourse === "All"}
+              onPress={() => setTodayCourse("All")}
             />
-          ))}
-        </ScrollView>
-
-        {dueToday.length === 0 ? (
-          <EmptyCard text="No assignments due today 🎉" />
-        ) : (
-          <View style={{ gap: 10 }}>
-            {dueToday.map((a) => (
-              <AssignmentCard key={a.id} assignment={a} />
+            {courses.map((c) => (
+              <Chip
+                key={c}
+                label={c}
+                active={todayCourse === c}
+                onPress={() => setTodayCourse(c)}
+              />
             ))}
-          </View>
-        )}
-      </View>
+          </ScrollView>
 
-      {/* Upcoming section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>
-            Upcoming
-          </Text>
-          <Text style={styles.sectionSub}>
-            Next 7 days
-          </Text>
-        </View>
-
-        {upcoming7.length === 0 ? (
-          <EmptyCard text="Nothing coming up this week." />
-        ) : (
-          <View style={{ gap: 10 }}>
-            {upcoming7
-              .slice()
-              .sort(
-                (a, b) =>
-                  (a.dueISO || "").localeCompare(
-                    b.dueISO || ""
-                  )
-              )
-              .map((a) => (
+          {dueToday.length === 0 ? (
+            <EmptyCard text="No assignments due today 🎉" />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {dueToday.map((a) => (
                 <AssignmentCard key={a.id} assignment={a} />
               ))}
-          </View>
-        )}
-      </View>
+            </View>
+          )}
+        </View>
 
-      {/* Overdue section */}
-      {overdue.length > 0 && (
+        {/* Upcoming section */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>
-              Overdue
-            </Text>
-            <View style={styles.badgeDanger}>
-              <Text style={styles.badgeDangerText}>
-                Needs attention
-              </Text>
-            </View>
+            <Text style={styles.sectionTitle}>Upcoming</Text>
+            <Text style={styles.sectionSub}>Next 7 days</Text>
           </View>
 
-          <View style={{ gap: 10 }}>
-            {overdue
-              .slice()
-              .sort(
-                (a, b) =>
-                  (a.dueISO || "").localeCompare(
-                    b.dueISO || ""
-                  )
-              )
-              .map((a) => (
-                <AssignmentCard key={a.id} assignment={a} />
-              ))}
+          {upcoming7.length === 0 ? (
+            <EmptyCard text="Nothing coming up this week." />
+          ) : (
+            <View style={{ gap: 10 }}>
+              {upcoming7
+                .slice()
+                .sort((a, b) =>
+                  (a.dueISO || "").localeCompare(b.dueISO || "")
+                )
+                .map((a) => (
+                  <AssignmentCard key={a.id} assignment={a} />
+                ))}
+            </View>
+          )}
+        </View>
+
+        {/* Overdue section */}
+        {overdue.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Overdue</Text>
+              <View style={styles.badgeDanger}>
+                <Text style={styles.badgeDangerText}>
+                  Needs attention
+                </Text>
+              </View>
+            </View>
+
+            <View style={{ gap: 10 }}>
+              {overdue
+                .slice()
+                .sort((a, b) =>
+                  (a.dueISO || "").localeCompare(b.dueISO || "")
+                )
+                .map((a) => (
+                  <AssignmentCard key={a.id} assignment={a} />
+                ))}
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Walkthrough overlay */}
+      {showTour && (
+        <View style={styles.tourOverlay}>
+          <View style={styles.tourCard}>
+            <Text style={styles.tourTitle}>Quick tour</Text>
+            <Text style={styles.tourStepLabel}>
+              Step {tourStep + 1} of {tourSteps.length}
+            </Text>
+            <Text style={styles.tourItemTitle}>
+              {tourSteps[tourStep].title}
+            </Text>
+            <Text style={styles.tourItemDesc}>
+              {tourSteps[tourStep].description}
+            </Text>
+
+            <View style={styles.tourButtonsRow}>
+              <TouchableOpacity
+                style={styles.tourSecondaryButton}
+                onPress={handleSkipTour}
+              >
+                <Text style={styles.tourSecondaryText}>
+                  Skip tour
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.tourPrimaryButton}
+                onPress={handleNextTour}
+              >
+                <Text style={styles.tourPrimaryText}>
+                  {tourStep === tourSteps.length - 1
+                    ? "Finish"
+                    : "Next"}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -250,10 +319,7 @@ function Chip({
     <View style={{ marginRight: 8 }}>
       <Text
         onPress={onPress}
-        style={[
-          styles.chip,
-          active && styles.chipActive,
-        ]}
+        style={[styles.chip, active && styles.chipActive]}
       >
         {label}
       </Text>
@@ -269,43 +335,28 @@ function EmptyCard({ text }: { text: string }) {
   );
 }
 
-function AssignmentCard({
-  assignment,
-}: {
-  assignment: any;
-}) {
+function AssignmentCard({ assignment }: { assignment: any }) {
   const dueLabel = assignment.dueISO
-    ? new Date(
-        assignment.dueISO
-      ).toLocaleDateString()
+    ? new Date(assignment.dueISO).toLocaleDateString()
     : null;
 
   let dotColor = "#10B981";
   if (assignment.priority === "high") dotColor = "#EF4444";
-  else if (assignment.priority === "medium")
-    dotColor = "#F59E0B";
+  else if (assignment.priority === "medium") dotColor = "#F59E0B";
 
   return (
     <View style={styles.card}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.cardTitle}>
-          {assignment.title}
-        </Text>
+        <Text style={styles.cardTitle}>{assignment.title}</Text>
         {!!assignment.course && (
-          <Text style={styles.cardCourse}>
-            {assignment.course}
-          </Text>
+          <Text style={styles.cardCourse}>{assignment.course}</Text>
         )}
         {!!dueLabel && (
-          <Text style={styles.cardMeta}>
-            Due {dueLabel}
-          </Text>
+          <Text style={styles.cardMeta}>Due {dueLabel}</Text>
         )}
       </View>
       <View style={styles.cardRight}>
-        <View
-          style={[styles.dot, { backgroundColor: dotColor }]}
-        />
+        <View style={[styles.dot, { backgroundColor: dotColor }]} />
         <ArrowRight size={18} color="#9CA3AF" />
       </View>
     </View>
@@ -313,9 +364,12 @@ function AssignmentCard({
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: "#F3F4F6",
+  },
+  container: {
+    flex: 1,
     paddingHorizontal: 20,
     paddingTop: 60,
   },
@@ -453,5 +507,74 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
+  },
+
+  // Walkthrough styles
+  tourOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: "rgba(15,23,42,0.4)",
+    justifyContent: "flex-end",
+    paddingHorizontal: 20,
+    paddingBottom: 110, // leave room for bottom nav
+  },
+  tourCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+  },
+  tourTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  tourStepLabel: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#6B7280",
+  },
+  tourItemTitle: {
+    marginTop: 10,
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#4F46E5",
+  },
+  tourItemDesc: {
+    marginTop: 6,
+    fontSize: 14,
+    color: "#4B5563",
+  },
+  tourButtonsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 16,
+  },
+  tourSecondaryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  tourSecondaryText: {
+    color: "#4B5563",
+    fontWeight: "600",
+  },
+  tourPrimaryButton: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#A2D2FF",
+  },
+  tourPrimaryText: {
+    color: "#111827",
+    fontWeight: "700",
   },
 });

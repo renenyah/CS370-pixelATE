@@ -14,81 +14,112 @@ import {
   User as UserIcon,
   Plus,
 } from "lucide-react-native";
+
 import PlusMenu from "../components/PlusMenu";
+import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
+import { colors } from "../lib/colors";
+
+const AUTH_ROUTES = ["/login", "/signup"];
+export const NAV_HEIGHT = 88;
 
 export default function RootLayout() {
   const router = useRouter();
   const pathname = usePathname();
-  const [plusOpen, setPlusOpen] = useState(false);
 
-  // Hide nav + plus menu on login / signup screens
-  const isAuthRoute =
-    pathname === "/login" || pathname === "/signup";
+  const [plusOpen, setPlusOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
   return (
     <AssignmentsProvider>
       <View style={{ flex: 1 }}>
-        {/* Expo Router handles all screens from app/ */}
+        {/* All screens */}
         <Stack screenOptions={{ headerShown: false }} />
 
-        {/* Only show PlusMenu + bottom nav when NOT on auth screens */}
+        {/* Quick actions (only on main app screens) */}
+        {!isAuthRoute && plusOpen && (
+          <PlusMenu
+            onClose={() => setPlusOpen(false)}
+            onUploadSyllabus={() => {
+              setPlusOpen(false);
+              setUploadOpen(true);
+            }}
+            onAddClass={() => {
+              setPlusOpen(false);
+              // later: navigate to a "new class" screen
+            }}
+            onAddAssignment={() => {
+              setPlusOpen(false);
+              // later: navigate to a "new assignment" screen
+            }}
+          />
+        )}
+
+        {/* Upload syllabus lives at root so it doesn’t depend on PlusMenu being mounted */}
         {!isAuthRoute && (
-          <>
-            {plusOpen && (
-              <PlusMenu onClose={() => setPlusOpen(false)} />
-            )}
+          <UploadSyllabusModal
+            visible={uploadOpen}
+            onClose={() => setUploadOpen(false)}
+          />
+        )}
 
-            <View style={styles.navBar}>
-              <NavItem
-                label="Home"
-                Icon={HomeIcon}
-                active={pathname === "/home"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  router.push("/home");
-                }}
-              />
+        {/* Bottom nav (hidden on login/signup) */}
+        {!isAuthRoute && (
+          <View style={styles.navBar}>
+            <NavItem
+              label="Home"
+              Icon={HomeIcon}
+              active={pathname === "/home" || pathname === "/"}
+              onPress={() => {
+                setPlusOpen(false);
+                setUploadOpen(false);
+                router.push("/home");
+              }}
+            />
 
-              <NavItem
-                label="Classes"
-                Icon={FolderIcon}
-                active={pathname === "/classes"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  router.push("/classes");
-                }}
-              />
+            <NavItem
+              label="Classes"
+              Icon={FolderIcon}
+              active={pathname === "/classes"}
+              onPress={() => {
+                setPlusOpen(false);
+                setUploadOpen(false);
+                router.push("/classes");
+              }}
+            />
 
-              <TouchableOpacity
-                style={styles.plusButton}
-                activeOpacity={0.9}
-                onPress={() => setPlusOpen((prev) => !prev)}
-              >
-                <Plus size={28} color="#fff" />
-              </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.plusButton}
+              activeOpacity={0.9}
+              onPress={() => setPlusOpen((prev) => !prev)}
+            >
+              <Plus size={28} color="#fff" />
+            </TouchableOpacity>
 
-              <NavItem
-                label="Calendar"
-                Icon={CalendarIcon}
-                active={pathname === "/calendar"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  router.push("/calendar");
-                }}
-              />
+            <NavItem
+              label="Calendar"
+              Icon={CalendarIcon}
+              active={pathname === "/calendar"}
+              onPress={() => {
+                setPlusOpen(false);
+                setUploadOpen(false);
+                router.push("/calendar");
+              }}
+            />
 
-              <NavItem
-                label="Profile"
-                Icon={UserIcon}
-                active={pathname === "/profile"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  router.push("/profile");
-                }}
-              />
-            </View>
-          </>
+            <NavItem
+              label="Profile"
+              Icon={UserIcon}
+              active={pathname === "/profile"}
+              onPress={() => {
+                setPlusOpen(false);
+                setUploadOpen(false);
+                router.push("/profile");
+              }}
+            />
+          </View>
         )}
       </View>
     </AssignmentsProvider>
@@ -105,7 +136,10 @@ type NavItemProps = {
 function NavItem({ label, Icon, active, onPress }: NavItemProps) {
   return (
     <TouchableOpacity style={styles.navItem} onPress={onPress}>
-      <Icon size={24} color={active ? "#7C3AED" : "#E5E7EB"} />
+      <Icon
+        size={24}
+        color={active ? colors.lavender : "#E5E7EB"}
+      />
       <Text
         style={[
           styles.navText,
@@ -117,8 +151,6 @@ function NavItem({ label, Icon, active, onPress }: NavItemProps) {
     </TouchableOpacity>
   );
 }
-
-const NAV_HEIGHT = 88;
 
 const styles = StyleSheet.create({
   navBar: {
@@ -144,14 +176,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   navTextActive: {
-    color: "#7C3AED",
+    color: colors.lavender,
     fontWeight: "700",
   },
   plusButton: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#7C3AED",
+    backgroundColor: colors.lavender,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 14,
@@ -162,5 +194,4 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 });
-
-export { NAV_HEIGHT };
+ { NAV_HEIGHT };

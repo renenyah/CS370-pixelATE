@@ -6,354 +6,217 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Modal,
 } from "react-native";
-import {
-  Folder,
-  ChevronRight,
-  X,
-} from "lucide-react-native";
+
 import {
   useAssignments,
   isOverdue,
   within7Days,
 } from "../components/AssignmentsContext";
+import ClassFolderCard from "../components/ClassFolderCard";
+import { colors } from "../lib/colors";
+
+type ClassFolder = {
+  id: string;
+  course: string;
+  semesterLabel?: string;
+  color?: string;
+  overdue: number;
+  upcoming: number;
+};
 
 export default function ClassesScreen() {
   const { assignments } = useAssignments();
-  const [openCourse, setOpenCourse] = useState<string | null>(
-    null
-  );
+  const [selectedSemester, setSelectedSemester] =
+    useState<string>("All");
 
-  const courses = useMemo(() => {
-    const s = new Set<string>();
-    assignments.forEach((a) => a.course && s.add(a.course));
-    return Array.from(s);
-  }, [assignments]);
+  // Build class folders from assignments
+  const classFolders: ClassFolder[] = useMemo(() => {
+    const map = new Map<string, ClassFolder>();
 
-  const itemsByCourse = useMemo(() => {
-    const map: Record<string, typeof assignments> = {};
     assignments.forEach((a) => {
-      if (!a.course) return;
-      if (!map[a.course]) map[a.course] = [];
-      map[a.course].push(a);
+      const meta = a as any;
+      const semesterLabel: string | undefined =
+        meta.semesterLabel || undefined;
+      const folderColor: string | undefined =
+        meta.color || undefined;
+
+      const key = `${a.course || "Unknown"}::${semesterLabel || "none"}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          course: a.course || "Untitled class",
+          semesterLabel,
+          color: folderColor,
+          overdue: 0,
+          upcoming: 0,
+        });
+      }
+      const entry = map.get(key)!;
+
+      if (isOverdue(a.dueISO || null)) {
+        entry.overdue += 1;
+      } else if (within7Days(a.dueISO || null)) {
+        entry.upcoming += 1;
+      }
     });
-    return map;
+
+    return Array.from(map.values());
   }, [assignments]);
 
-  const openItems = openCourse
-    ? (itemsByCourse[openCourse] || []).slice().sort(
-        (a, b) =>
-          (a.dueISO || "").localeCompare(b.dueISO || "")
-      )
-    : [];
+  // unique semester labels
+  const semesterOptions = useMemo(() => {
+    const s = new Set<string>();
+    classFolders.forEach((f) => {
+      if (f.semesterLabel) s.add(f.semesterLabel);
+    });
+    const arr = Array.from(s).sort();
+    return ["All", ...arr];
+  }, [classFolders]);
+
+  const filteredFolders = useMemo(() => {
+    if (selectedSemester === "All") return classFolders;
+    return classFolders.filter(
+      (f) => f.semesterLabel === selectedSemester
+    );
+  }, [classFolders, selectedSemester]);
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={{ paddingBottom: 120 }}
+    >
+      <View style={styles.header}>
+        <Text style={styles.title}>Classes</Text>
+        <Text style={styles.subtitle}>
+          View your classes by folder. Filter by semester to stay
+          organized.
+        </Text>
+      </View>
+
+      {/* Semester chips (fixes the big purple "All" bar) */}
       <ScrollView
-        contentContainerStyle={{ paddingBottom: 120 }}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.semesterScroll}
+        contentContainerStyle={{ paddingRight: 16 }}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Classes</Text>
-          <Text style={styles.sub}>
-            View all assignments grouped by class
-          </Text>
-        </View>
-
-        {courses.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>
-              No classes yet. Upload a syllabus to get started.
-            </Text>
-          </View>
-        ) : (
-          <View style={{ gap: 14 }}>
-            {courses.map((course) => {
-              const items = itemsByCourse[course] || [];
-              const overdueCount = items.filter((a) =>
-                isOverdue(a.dueISO || null)
-              ).length;
-              const upcomingCount = items.filter((a) =>
-                within7Days(a.dueISO || null)
-              ).length;
-              return (
-                <TouchableOpacity
-                  key={course}
-                  style={styles.classCard}
-                  activeOpacity={0.9}
-                  onPress={() => setOpenCourse(course)}
-                >
-                  <View style={styles.classTop}>
-                    <Folder
-                      size={24}
-                      color="#6D28D9"
-                    />
-                    <Text
-                      numberOfLines={1}
-                      style={styles.className}
-                    >
-                      {course}
-                    </Text>
-                  </View>
-
-                  <View style={styles.pillsRow}>
-                    <View
-                      style={[
-                        styles.pill,
-                        styles.pillOverdue,
-                      ]}
-                    >
-                      <Text style={styles.pillText}>
-                        Overdue: {overdueCount}
-                      </Text>
-                    </View>
-                    <View
-                      style={[
-                        styles.pill,
-                        styles.pillUpcoming,
-                      ]}
-                    >
-                      <Text style={styles.pillText}>
-                        Upcoming: {upcomingCount}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.footerRow}>
-                    <Text style={styles.viewText}>
-                      View assignments
-                    </Text>
-                    <ChevronRight
-                      size={18}
-                      color="#6D28D9"
-                    />
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+        {semesterOptions.map((label) => (
+          <SemesterChip
+            key={label}
+            label={label}
+            active={selectedSemester === label}
+            onPress={() => setSelectedSemester(label)}
+          />
+        ))}
       </ScrollView>
 
-      {/* Class detail modal */}
-      <Modal
-        visible={!!openCourse}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setOpenCourse(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>
-                {openCourse}
-              </Text>
-              <TouchableOpacity
-                onPress={() => setOpenCourse(null)}
-              >
-                <X size={22} color="#111827" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView
-              style={{ maxHeight: "80%" }}
-              contentContainerStyle={{
-                paddingVertical: 6,
+      {/* Class folders */}
+      <View style={{ gap: 14, marginTop: 8 }}>
+        {filteredFolders.length === 0 ? (
+          <Text style={styles.emptyText}>
+            No classes yet for this semester. Try uploading a syllabus
+            or adding a class with the + button.
+          </Text>
+        ) : (
+          filteredFolders.map((f) => (
+            <ClassFolderCard
+              key={f.id}
+              course={f.course}
+              semesterLabel={f.semesterLabel}
+              folderColor={f.color}
+              overdueCount={f.overdue}
+              upcomingCount={f.upcoming}
+              // You can later wire this into a real "edit class" modal
+              onEditClass={() => {
+                // placeholder for now
+                // e.g. open an EditClassModal
               }}
-            >
-              {openItems.length === 0 ? (
-                <View style={styles.emptyCard}>
-                  <Text style={styles.emptyText}>
-                    No assignments yet for this class.
-                  </Text>
-                </View>
-              ) : (
-                openItems.map((a) => {
-                  const dueLabel = a.dueISO
-                    ? new Date(
-                        a.dueISO
-                      ).toLocaleDateString()
-                    : null;
-                  let dotColor = "#10B981";
-                  if (a.priority === "high")
-                    dotColor = "#EF4444";
-                  else if (a.priority === "medium")
-                    dotColor = "#F59E0B";
+            />
+          ))
+        )}
+      </View>
+    </ScrollView>
+  );
+}
 
-                  return (
-                    <View
-                      key={a.id}
-                      style={styles.assignmentRow}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.assignmentTitle}>
-                          {a.title}
-                        </Text>
-                        {!!dueLabel && (
-                          <Text
-                            style={styles.assignmentMeta}
-                          >
-                            Due {dueLabel}
-                          </Text>
-                        )}
-                        {!!a.type && (
-                          <Text
-                            style={styles.assignmentType}
-                          >
-                            {a.type}
-                          </Text>
-                        )}
-                      </View>
-                      <View
-                        style={[
-                          styles.dot,
-                          { backgroundColor: dotColor },
-                        ]}
-                      />
-                    </View>
-                  );
-                })
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-    </View>
+function SemesterChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.85}
+      style={[
+        styles.semesterChip,
+        active && styles.semesterChipActive,
+      ]}
+    >
+      <Text
+        style={[
+          styles.semesterChipText,
+          active && styles.semesterChipTextActive,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: colors.appBackground,
     paddingHorizontal: 20,
     paddingTop: 60,
   },
   header: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: "800",
-    color: "#0F172A",
+    color: colors.textPrimary,
   },
-  sub: {
+  subtitle: {
     marginTop: 4,
-    color: "#6B7280",
+    color: colors.textSecondary,
     fontSize: 14,
   },
-  emptyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 18,
-    alignItems: "center",
+  semesterScroll: {
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  semesterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.chipBackground,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  semesterChipActive: {
+    backgroundColor: colors.lavender,
+    borderColor: colors.lavender,
+  },
+  semesterChipText: {
+    fontWeight: "600",
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  semesterChipTextActive: {
+    color: "#FFFFFF",
   },
   emptyText: {
-    color: "#6B7280",
-  },
-  classCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 18,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-  },
-  classTop: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  className: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#111827",
-    flex: 1,
-  },
-  pillsRow: {
-    flexDirection: "row",
-    gap: 8,
-    marginTop: 12,
-  },
-  pill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  pillOverdue: {
-    backgroundColor: "#FDE8E8",
-  },
-  pillUpcoming: {
-    backgroundColor: "#EDE9FE",
-  },
-  pillText: {
-    fontWeight: "700",
-    color: "#111827",
-  },
-  footerRow: {
-    marginTop: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  viewText: {
-    color: "#6D28D9",
-    fontWeight: "800",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-  },
-  modalSheet: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 16,
-  },
-  modalHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#111827",
-  },
-  assignmentRow: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    padding: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  assignmentTitle: {
-    fontWeight: "700",
-    color: "#111827",
-  },
-  assignmentMeta: {
-    color: "#6B7280",
-    marginTop: 2,
-    fontSize: 12,
-  },
-  assignmentType: {
-    color: "#6D28D9",
-    marginTop: 2,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    color: colors.textSecondary,
+    fontSize: 14,
   },
 });

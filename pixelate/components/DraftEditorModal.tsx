@@ -1,42 +1,70 @@
 // components/DraftEditorModal.tsx
 import React from "react";
 import {
+  Modal,
   View,
   Text,
   StyleSheet,
-  Modal,
-  TextInput,
   TouchableOpacity,
+  TextInput,
   ScrollView,
 } from "react-native";
-import { X, Trash2, Save } from "lucide-react-native";
-import { Draft, safeISO } from "./AssignmentsContext";
+import { X, Trash2 } from "lucide-react-native";
+
+import {
+  Draft,
+  useAssignments,
+  safeISO,
+} from "./AssignmentsContext";
+import { colors } from "../lib/colors";
 
 type Props = {
   visible: boolean;
   drafts: Draft[];
-  onChangeDrafts: (drafts: Draft[]) => void;
-  onClose: () => void;
-  onStartOver: () => void;
-  onSave: () => void;
+  setDrafts: (drafts: Draft[]) => void;
+  onCancel: () => void;
+  onDone: () => void;
 };
 
 export default function DraftEditorModal({
   visible,
   drafts,
-  onChangeDrafts,
-  onClose,
-  onStartOver,
-  onSave,
+  setDrafts,
+  onCancel,
+  onDone,
 }: Props) {
-  const updateDraft = (id: string, patch: Partial<Draft>) => {
-    onChangeDrafts(
-      drafts.map((d) => (d.id === id ? { ...d, ...patch } : d))
+  const { addAssignmentsFromDrafts } = useAssignments();
+
+  const updateDraft = (
+    id: string,
+    field: keyof Draft,
+    value: string
+  ) => {
+    setDrafts(
+      drafts.map((d) =>
+        d.id === id ? { ...d, [field]: value } : d
+      )
     );
   };
 
-  const removeDraft = (id: string) => {
-    onChangeDrafts(drafts.filter((d) => d.id !== id));
+  const handleDelete = (id: string) => {
+    setDrafts(drafts.filter((d) => d.id !== id));
+  };
+
+  const handleSave = () => {
+    if (!drafts.length) {
+      onDone();
+      return;
+    }
+
+    // normalize dates before saving
+    const cleaned = drafts.map((d) => ({
+      ...d,
+      dueISO: safeISO(d.dueISO || null),
+    }));
+
+    addAssignmentsFromDrafts(cleaned);
+    onDone();
   };
 
   return (
@@ -44,126 +72,128 @@ export default function DraftEditorModal({
       visible={visible}
       transparent
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={onCancel}
     >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.headerRow}>
-            <Text style={styles.title}>Review & Edit</Text>
-            <TouchableOpacity onPress={onClose}>
-              <X size={22} color="#111827" />
+            <Text style={styles.title}>
+              Review extracted assignments
+            </Text>
+            <TouchableOpacity onPress={onCancel}>
+              <X size={22} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
           <Text style={styles.sub}>
-            Found {drafts.length} assignment
-            {drafts.length === 1 ? "" : "s"}. Tap to edit, delete,
-            or adjust dates before saving.
+            Check the titles, class names, and due dates. You can
+            delete anything that looks wrong before saving.
           </Text>
 
           <ScrollView
             style={{ maxHeight: 420 }}
-            contentContainerStyle={{ paddingVertical: 4 }}
+            contentContainerStyle={{ paddingBottom: 12 }}
           >
-            {drafts.map((d, idx) => (
-              <View key={d.id} style={styles.card}>
-                <Text style={styles.index}>#{idx + 1}</Text>
-
-                <Text style={styles.label}>Title</Text>
-                <TextInput
-                  style={styles.input}
-                  value={d.title}
-                  onChangeText={(v) =>
-                    updateDraft(d.id, { title: v })
-                  }
-                  placeholder="Assignment title"
-                  placeholderTextColor="#9CA3AF"
-                />
-
-                <View style={styles.row}>
-                  <View style={{ flex: 1, marginRight: 6 }}>
-                    <Text style={styles.label}>Course</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={d.course}
-                      onChangeText={(v) =>
-                        updateDraft(d.id, { course: v })
-                      }
-                      placeholder="e.g., CS 370"
-                      placeholderTextColor="#9CA3AF"
-                    />
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 6 }}>
-                    <Text style={styles.label}>Type</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={d.type}
-                      onChangeText={(v) =>
-                        updateDraft(d.id, {
-                          type: (v ||
-                            "Assignment") as Draft["type"],
-                        })
-                      }
-                      placeholder="Assignment / Quiz / Test…"
-                      placeholderTextColor="#9CA3AF"
-                    />
-                  </View>
-                </View>
-
-                <Text style={styles.label}>
-                  Due Date (YYYY-MM-DD)
+            {drafts.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyText}>
+                  No assignments in this batch.
                 </Text>
-                <TextInput
-                  style={styles.input}
-                  value={d.dueISO || ""}
-                  onChangeText={(v) =>
-                    updateDraft(d.id, { dueISO: safeISO(v) })
-                  }
-                  placeholder="2025-11-09"
-                  placeholderTextColor="#9CA3AF"
-                />
-
-                <Text style={styles.label}>
-                  Description (optional)
-                </Text>
-                <TextInput
-                  style={[styles.input, { height: 80 }]}
-                  multiline
-                  textAlignVertical="top"
-                  value={d.description || ""}
-                  onChangeText={(v) =>
-                    updateDraft(d.id, { description: v })
-                  }
-                  placeholder="Extra details…"
-                  placeholderTextColor="#9CA3AF"
-                />
-
-                <View style={styles.footerRow}>
-                  <TouchableOpacity
-                    style={styles.deleteBtn}
-                    onPress={() => removeDraft(d.id)}
-                  >
-                    <Trash2 size={16} color="#DC2626" />
-                    <Text style={styles.deleteText}>Delete</Text>
-                  </TouchableOpacity>
-                </View>
               </View>
-            ))}
+            ) : (
+              drafts.map((d) => (
+                <View key={d.id} style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.cardLabel}>
+                      Assignment title
+                    </Text>
+                    <TouchableOpacity
+                      onPress={() => handleDelete(d.id)}
+                    >
+                      <Trash2
+                        size={18}
+                        color={colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.input}
+                    value={d.title}
+                    onChangeText={(t) =>
+                      updateDraft(d.id, "title", t)
+                    }
+                    placeholder="Assignment title"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  <Text style={styles.cardLabel}>
+                    Class name
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={d.course}
+                    onChangeText={(t) =>
+                      updateDraft(d.id, "course", t)
+                    }
+                    placeholder="e.g., AS 110-3 – Rome Sketchbook"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  <Text style={styles.cardLabel}>
+                    Due date (YYYY-MM-DD or any parseable date)
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={d.dueISO || ""}
+                    onChangeText={(t) =>
+                      updateDraft(d.id, "dueISO", t)
+                    }
+                    placeholder="2025-02-03"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  <Text style={styles.cardLabel}>
+                    Description (optional)
+                  </Text>
+                  <TextInput
+                    style={[styles.input, { height: 70 }]}
+                    multiline
+                    textAlignVertical="top"
+                    value={d.description || ""}
+                    onChangeText={(t) =>
+                      updateDraft(d.id, "description", t)
+                    }
+                    placeholder="Add notes or details…"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+                </View>
+              ))
+            )}
           </ScrollView>
 
           <View style={styles.actionsRow}>
             <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={onStartOver}
+              style={[styles.actionBtn, styles.cancelBtn]}
+              onPress={onCancel}
             >
-              <Text style={styles.secondaryText}>Start Over</Text>
+              <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={onSave}
+              style={[styles.actionBtn, styles.primaryBtn]}
+              onPress={handleSave}
             >
-              <Save size={18} color="#fff" />
-              <Text style={styles.primaryText}>Save All</Text>
+              <Text style={styles.primaryText}>
+                Save assignments
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -175,16 +205,16 @@ export default function DraftEditorModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
-    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
     justifyContent: "center",
+    alignItems: "center",
     padding: 16,
   },
   sheet: {
     width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#fff",
-    borderRadius: 20,
+    maxWidth: 520,
+    backgroundColor: colors.cardBackground,
+    borderRadius: 18,
     padding: 16,
   },
   headerRow: {
@@ -195,101 +225,78 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#111827",
+    color: colors.textPrimary,
   },
   sub: {
+    color: colors.textSecondary,
     marginTop: 6,
     marginBottom: 10,
-    color: "#6B7280",
-    fontSize: 14,
+  },
+  emptyBox: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+  },
+  emptyText: {
+    color: colors.textSecondary,
   },
   card: {
-    backgroundColor: "#F9FAFB",
     borderRadius: 14,
-    padding: 12,
-    marginBottom: 10,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: colors.borderSubtle,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: "#F9FAFB",
   },
-  index: {
-    color: "#6B7280",
-    fontWeight: "700",
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 6,
   },
-  label: {
-    color: "#6B7280",
+  cardLabel: {
+    fontSize: 12,
     fontWeight: "700",
+    color: colors.textSecondary,
     marginTop: 4,
     marginBottom: 4,
-    fontSize: 12,
   },
   input: {
     backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: "#111827",
-    fontSize: 14,
-  },
-  row: {
-    flexDirection: "row",
-    marginTop: 6,
-  },
-  footerRow: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    marginTop: 8,
-  },
-  deleteBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "#FEE2E2",
-    paddingHorizontal: 10,
-    paddingVertical: 8,
     borderRadius: 10,
-  },
-  deleteText: {
-    color: "#DC2626",
-    fontWeight: "700",
-    fontSize: 12,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: colors.textPrimary,
+    marginBottom: 4,
   },
   actionsRow: {
     flexDirection: "row",
+    justifyContent: "space-between",
     gap: 10,
-    marginTop: 12,
+    marginTop: 14,
   },
-  secondaryBtn: {
+  actionBtn: {
     flex: 1,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    backgroundColor: "#FFFFFF",
-    paddingVertical: 10,
+    paddingVertical: 12,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  secondaryText: {
-    fontWeight: "700",
-    color: "#111827",
-    fontSize: 14,
+  cancelBtn: {
+    backgroundColor: "#E5E7EB",
   },
   primaryBtn: {
-    flex: 1,
-    borderRadius: 999,
-    backgroundColor: "#7C3AED",
-    paddingVertical: 10,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 6,
+    backgroundColor: colors.blue,
+  },
+  cancelText: {
+    color: colors.textPrimary,
+    fontWeight: "800",
   },
   primaryText: {
-    fontWeight: "700",
-    color: "#FFFFFF",
-    fontSize: 14,
-    marginLeft: 4,
+    color: "#fff",
+    fontWeight: "800",
   },
 });

@@ -11,7 +11,6 @@ import {
   Alert,
 } from "react-native";
 import { useRouter, Link } from "expo-router";
-import { Mail, Lock } from "lucide-react-native";
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginScreen( { navigation }) {

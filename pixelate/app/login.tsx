@@ -9,9 +9,13 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { Mail, Lock } from "lucide-react-native";
 import { Eye, EyeOff } from "lucide-react-native";
+import { useAuth } from '../context/AuthContext';
+
 
 const COLORS = {
   bg: "#FDF2FF", // soft background
@@ -31,17 +35,25 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { signIn } = useAuth();
 
-  const onLogin = () => {
+  const onLogin = async () => {
     if (!email.trim() || !password.trim()) {
       setError("Please enter both email and password.");
       return;
     }
     setError("");
 
-    // No real auth yet – just go to Home and show the walkthrough
-    router.push({ pathname: "/home", params: { showTour: "1" } });
-  };
+    setLoading(true);
+    const { error } = await signIn(email, password);
+    setLoading(false);
+
+    if(error) {
+      Alert.alert('Login Failed', error.message);
+    }
+
+  }
 
   return (
     <KeyboardAvoidingView

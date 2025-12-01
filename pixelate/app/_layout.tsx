@@ -18,7 +18,8 @@ import {
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
-import { colors } from "../lib/colors";
+import { AuthProvider } from "../components/AuthContext"; // 🟣 make sure this path matches your file
+import { colors } from "../constant/colors";              // 🟣 matches your current setup
 
 const AUTH_ROUTES = ["/login", "/signup"];
 export const NAV_HEIGHT = 88;
@@ -36,101 +37,103 @@ export default function RootLayout() {
     <AuthProvider>
       <AssignmentsProvider>
         <View style={{ flex: 1 }}>
-        {/* All screens */}
-        <Stack screenOptions={{ headerShown: false }} />
+          {/* All screens in the app */}
+          <Stack screenOptions={{ headerShown: false }} />
 
-        {/* Quick actions (only on main app screens) */}
-        {!isAuthRoute && plusOpen && (
-          <PlusMenu
-            onClose={() => setPlusOpen(false)}
-            onUploadSyllabus={() => {
-              setPlusOpen(false);
-              setUploadOpen(true);
-            }}
-            onAddClass={() => {
-              setPlusOpen(false);
-              // later: navigate to a "new class" screen
-            }}
-            onAddAssignment={() => {
-              setPlusOpen(false);
-              // later: navigate to a "new assignment" screen
-            }}
-          />
-        )}
-
-        {/* Upload syllabus lives at root so it doesn’t depend on PlusMenu being mounted */}
-        {!isAuthRoute && (
-          <UploadSyllabusModal
-            visible={uploadOpen}
-            onClose={() => setUploadOpen(false)}
-          />
-        )}
-
-        {/* Bottom nav (hidden on login/signup) */}
-        {!isAuthRoute && (
-          <View style={styles.navBar}>
-            <NavItem
-              label="Home"
-              Icon={HomeIcon}
-              active={pathname === "/home" || pathname === "/"}
-              onPress={() => {
+          {/* + menu (only on main app screens, not login/signup) */}
+          {!isAuthRoute && plusOpen && (
+            <PlusMenu
+              onClose={() => setPlusOpen(false)}
+              onUploadSyllabus={() => {
                 setPlusOpen(false);
-                setUploadOpen(false);
+                setUploadOpen(true);
+              }}
+              onAddClass={() => {
+                setPlusOpen(false);
+                // later: push to a "create class" screen
+                router.push("/classes");
+              }}
+              onAddAssignment={() => {
+                setPlusOpen(false);
+                // later: push to "create assignment" or stay on home
                 router.push("/home");
               }}
             />
+          )}
 
-            <NavItem
-              label="Classes"
-              Icon={FolderIcon}
-              active={pathname === "/classes"}
-              onPress={() => {
-                setPlusOpen(false);
-                setUploadOpen(false);
-                router.push("/classes");
-              }}
+          {/* Upload syllabus modal lives at root */}
+          {!isAuthRoute && (
+            <UploadSyllabusModal
+              visible={uploadOpen}
+              onClose={() => setUploadOpen(false)}
             />
+          )}
 
-            <TouchableOpacity
-              style={styles.plusButton}
-              activeOpacity={0.9}
-              onPress={() => setPlusOpen((prev) => !prev)}
-            >
-              <Plus size={28} color="#fff" />
-            </TouchableOpacity>
+          {/* Bottom nav bar (hidden on login/signup) */}
+          {!isAuthRoute && (
+            <View style={styles.navBar}>
+              <NavItem
+                label="Home"
+                Icon={HomeIcon}
+                active={pathname === "/home"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  router.push("/home");
+                }}
+              />
 
-            <NavItem
-              label="Calendar"
-              Icon={CalendarIcon}
-              active={pathname === "/calendar"}
-              onPress={() => {
-                setPlusOpen(false);
-                setUploadOpen(false);
-                router.push("/calendar");
-              }}
-            />
+              <NavItem
+                label="Classes"
+                Icon={FolderIcon}
+                active={pathname === "/classes"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  router.push("/classes");
+                }}
+              />
 
-            <NavItem
-              label="Profile"
-              Icon={UserIcon}
-              active={pathname === "/profile"}
-              onPress={() => {
-                setPlusOpen(false);
-                setUploadOpen(false);
-                router.push("/profile");
-              }}
-            />
-          </View>
-        )}
-      </View>
-    </AssignmentsProvider>
-  </AuthProvider>
+              <TouchableOpacity
+                style={styles.plusButton}
+                activeOpacity={0.9}
+                onPress={() => setPlusOpen((prev) => !prev)}
+              >
+                <Plus size={28} color="#fff" />
+              </TouchableOpacity>
+
+              <NavItem
+                label="Calendar"
+                Icon={CalendarIcon}
+                active={pathname === "/calendar"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  router.push("/calendar");
+                }}
+              />
+
+              <NavItem
+                label="Profile"
+                Icon={UserIcon}
+                active={pathname === "/profile"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  router.push("/profile");
+                }}
+              />
+            </View>
+          )}
+        </View>
+      </AssignmentsProvider>
+    </AuthProvider>
   );
 }
 
 type NavItemProps = {
   label: string;
-  Icon: any;
+  Icon: React.ComponentType<{ size: number; color: string }>;
   active: boolean;
   onPress: () => void;
 };
@@ -196,4 +199,3 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 });
- { NAV_HEIGHT };

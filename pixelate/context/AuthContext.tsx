@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../constant/supabase';
 
 interface AuthResponse {
   data?: any;

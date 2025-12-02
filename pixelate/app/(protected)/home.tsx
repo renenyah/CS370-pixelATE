@@ -19,7 +19,7 @@ import {
   isSameISO,
   within7Days,
   isOverdue,
-} from "../components/AssignmentsContext";
+} from "../../components/AssignmentsContext";
 
 export default function HomeScreen() {
   const { assignments } = useAssignments();

@@ -1,5 +1,5 @@
 // app/_layout.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   TouchableOpacity,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { Stack, useRouter, usePathname } from "expo-router";
+import * as Linking from "expo-linking";
 import {
   Home as HomeIcon,
   Folder as FolderIcon,
@@ -22,6 +23,7 @@ import AddAssignmentModal from "../components/AddAssignmentModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
 import { AuthProvider } from "../context/AuthContext";
 import { colors } from "../constant/colors";
+import { supabase } from "../constant/supabase"; // Import your supabase client
 
 const AUTH_ROUTES = ["/login", "/signup"];
 export const NAV_HEIGHT = 88;
@@ -32,12 +34,81 @@ export default function RootLayout() {
 
   const [plusOpen, setPlusOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [showAddClassModal, setShowAddClassModal] =
-    useState(false);
-  const [showAddAssignmentModal, setShowAddAssignmentModal] =
-    useState(false);
+  const [showAddClassModal, setShowAddClassModal] = useState(false);
+  const [showAddAssignmentModal, setShowAddAssignmentModal] = useState(false);
 
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
+
+  // Deep link handler for email confirmation
+  useEffect(() => {
+    const handleDeepLink = async (url: string) => {
+      console.log("Deep link received:", url);
+      
+      try {
+        // Supabase puts tokens in the hash fragment (#), not query params (?)
+        // Extract everything after the # symbol
+        const hashIndex = url.indexOf('#');
+        if (hashIndex === -1) {
+          console.log("No hash fragment found in URL");
+          return;
+        }
+        
+        const hash = url.substring(hashIndex + 1);
+        console.log("Hash fragment:", hash);
+        
+        const params = new URLSearchParams(hash);
+        
+        const access_token = params.get('access_token');
+        const refresh_token = params.get('refresh_token');
+        
+        console.log("Access token exists:", !!access_token);
+        console.log("Refresh token exists:", !!refresh_token);
+        
+        if (access_token && refresh_token) {
+          console.log("Setting session...");
+          
+          const { data, error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+          
+          if (error) {
+            console.error("Error setting session:", error.message);
+            return;
+          }
+          
+          if (data?.session) {
+            console.log("User email verified successfully! Redirecting to home...");
+            // User is now authenticated and email is confirmed
+            // Navigate to home - they're logged in!
+            router.replace("/home");
+          } else {
+            console.log("No session in response data");
+          }
+        } else {
+          console.log("Missing tokens in URL");
+        }
+      } catch (err) {
+        console.error("Error in handleDeepLink:", err);
+      }
+    };
+
+    // Listen for URL events (when app is already open)
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      handleDeepLink(url);
+    });
+
+    // Check if app was opened via a deep link (when app was closed)
+    Linking.getInitialURL().then((url) => {
+      if (url) {
+        handleDeepLink(url);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [router]);
 
   return (
     <AuthProvider>
@@ -121,9 +192,7 @@ export default function RootLayout() {
               <TouchableOpacity
                 style={styles.plusButton}
                 activeOpacity={0.9}
-                onPress={() =>
-                  setPlusOpen((prev) => !prev)
-                }
+                onPress={() => setPlusOpen((prev) => !prev)}
               >
                 <Plus size={28} color="#fff" />
               </TouchableOpacity>
@@ -171,27 +240,11 @@ type NavItemProps = {
   onPress: () => void;
 };
 
-function NavItem({
-  label,
-  Icon,
-  active,
-  onPress,
-}: NavItemProps) {
+function NavItem({ label, Icon, active, onPress }: NavItemProps) {
   return (
-    <TouchableOpacity
-      style={styles.navItem}
-      onPress={onPress}
-    >
-      <Icon
-        size={24}
-        color={active ? colors.lavender : "#E5E7EB"}
-      />
-      <Text
-        style={[
-          styles.navText,
-          active && styles.navTextActive,
-        ]}
-      >
+    <TouchableOpacity style={styles.navItem} onPress={onPress}>
+      <Icon size={24} color={active ? colors.lavender : "#E5E7EB"} />
+      <Text style={[styles.navText, active && styles.navTextActive]}>
         {label}
       </Text>
     </TouchableOpacity>

@@ -6,6 +6,7 @@ import React, {
   useContext,
   ReactNode,
 } from "react";
+import * as Linking from "expo-linking";
 import { supabase } from "../constant/supabase";
 
 interface AuthResponse {
@@ -21,7 +22,6 @@ interface AuthContextType {
   user: any | null;
   session: any | null;
   loading: boolean;
-  // 👇 now accepts fullName as optional 3rd arg
   signUp: (
     email: string,
     password: string,
@@ -74,12 +74,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
 
     // ------------ SIGN UP ------------
     signUp: async (email, password, fullName) => {
+      // Hardcode the Expo Go URL for now (change this IP if your dev server IP changes)
+      const redirectUrl = "exp://10.44.163.76:8081/";
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: "pixelate://auth/callback",
-          // only send metadata if we actually have a fullName
+          emailRedirectTo: redirectUrl,
           data: fullName
             ? {
                 full_name: fullName,
@@ -109,9 +111,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
 
     // ------------ RESET PASSWORD ------------
     resetPassword: async (email) => {
+      const redirectUrl = Linking.createURL("/reset-password");
+      
       const { data, error } =
         await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: "pixelate://reset-password",
+          redirectTo: redirectUrl,
         });
       return { data, error };
     },

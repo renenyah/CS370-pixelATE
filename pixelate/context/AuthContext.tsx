@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import * as Linking from "expo-linking";
 import { supabase } from "../constant/supabase";
+import { REDIRECT_URL } from "../constant/config";
 
 interface AuthResponse {
   data?: any;
@@ -74,14 +75,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
 
     // ------------ SIGN UP ------------
     signUp: async (email, password, fullName) => {
-      // Hardcode the Expo Go URL for now (change this IP if your dev server IP changes)
-      const redirectUrl = "exp://10.44.163.76:8081/";
-      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: redirectUrl,
+          emailRedirectTo: REDIRECT_URL,
           data: fullName
             ? {
                 full_name: fullName,

@@ -17,115 +17,137 @@ import {
 
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
+import AddAssignmentModal from "../components/AddAssignmentModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
-import { AuthProvider } from "../context/AuthContext"; 
-import { colors } from "../constant/colors";              // 🟣 matches your current setup
+import { AuthProvider } from "../context/AuthContext";
+import { colors } from "../constant/colors";
 
-const AUTH_ROUTES = ["/login", "/signup"];
+const AUTH_ROUTES = ["/login", "/signup", "/auth/callback"];
 export const NAV_HEIGHT = 88;
 
-export default function RootLayout() {
+function RootShell() {
   const router = useRouter();
   const pathname = usePathname();
 
   const [plusOpen, setPlusOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [addAssignmentOpen, setAddAssignmentOpen] =
+    useState(false);
 
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
   return (
+    <View style={{ flex: 1 }}>
+      {/* All screens in the app */}
+      <Stack screenOptions={{ headerShown: false }} />
+
+      {/* + menu (only on main app screens, not login/signup/callback) */}
+      {!isAuthRoute && plusOpen && (
+        <PlusMenu
+          onClose={() => setPlusOpen(false)}
+          onUploadSyllabus={() => {
+            setPlusOpen(false);
+            setUploadOpen(true);
+          }}
+          onAddClass={() => {
+            setPlusOpen(false);
+            router.push("/classes");
+          }}
+          onAddAssignment={() => {
+            setPlusOpen(false);
+            setAddAssignmentOpen(true);
+          }}
+        />
+      )}
+
+      {/* Upload syllabus modal (LLM + PDF/text) */}
+      {!isAuthRoute && (
+        <UploadSyllabusModal
+          visible={uploadOpen}
+          onClose={() => setUploadOpen(false)}
+        />
+      )}
+
+      {/* Add assignment modal (manual + image upload) */}
+      {!isAuthRoute && (
+        <AddAssignmentModal
+          visible={addAssignmentOpen}
+          onClose={() => setAddAssignmentOpen(false)}
+        />
+      )}
+
+      {/* Bottom nav bar (hidden on login/signup/callback) */}
+      {!isAuthRoute && (
+        <View style={styles.navBar}>
+          <NavItem
+            label="Home"
+            Icon={HomeIcon}
+            active={
+              pathname === "/home" || pathname === "/"
+            }
+            onPress={() => {
+              setPlusOpen(false);
+              setUploadOpen(false);
+              setAddAssignmentOpen(false);
+              router.push("/home");
+            }}
+          />
+
+          <NavItem
+            label="Classes"
+            Icon={FolderIcon}
+            active={pathname === "/classes"}
+            onPress={() => {
+              setPlusOpen(false);
+              setUploadOpen(false);
+              setAddAssignmentOpen(false);
+              router.push("/classes");
+            }}
+          />
+
+          <TouchableOpacity
+            style={styles.plusButton}
+            activeOpacity={0.9}
+            onPress={() => setPlusOpen((prev) => !prev)}
+          >
+            <Plus size={28} color="#fff" />
+          </TouchableOpacity>
+
+          <NavItem
+            label="Calendar"
+            Icon={CalendarIcon}
+            active={pathname === "/calendar"}
+            onPress={() => {
+              setPlusOpen(false);
+              setUploadOpen(false);
+              setAddAssignmentOpen(false);
+              router.push("/calendar");
+            }}
+          />
+
+          <NavItem
+            label="Profile"
+            Icon={UserIcon}
+            active={pathname === "/profile"}
+            onPress={() => {
+              setPlusOpen(false);
+              setUploadOpen(false);
+              setAddAssignmentOpen(false);
+              router.push("/profile");
+            }}
+          />
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Wrap everything in Auth + Assignments providers
+export default function RootLayout() {
+  return (
     <AuthProvider>
       <AssignmentsProvider>
-        <View style={{ flex: 1 }}>
-          {/* All screens in the app */}
-          <Stack screenOptions={{ headerShown: false }} />
-
-          {/* + menu (only on main app screens, not login/signup) */}
-          {!isAuthRoute && plusOpen && (
-            <PlusMenu
-              onClose={() => setPlusOpen(false)}
-              onUploadSyllabus={() => {
-                setPlusOpen(false);
-                setUploadOpen(true);
-              }}
-              onAddClass={() => {
-                setPlusOpen(false);
-                // later: push to a "create class" screen
-                router.push("/classes");
-              }}
-              onAddAssignment={() => {
-                setPlusOpen(false);
-                // later: push to "create assignment" or stay on home
-                router.push("/home");
-              }}
-            />
-          )}
-
-          {/* Upload syllabus modal lives at root */}
-          {!isAuthRoute && (
-            <UploadSyllabusModal
-              visible={uploadOpen}
-              onClose={() => setUploadOpen(false)}
-            />
-          )}
-
-          {/* Bottom nav bar (hidden on login/signup) */}
-          {!isAuthRoute && (
-            <View style={styles.navBar}>
-              <NavItem
-                label="Home"
-                Icon={HomeIcon}
-                active={pathname === "/home"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  setUploadOpen(false);
-                  router.push("/home");
-                }}
-              />
-
-              <NavItem
-                label="Classes"
-                Icon={FolderIcon}
-                active={pathname === "/classes"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  setUploadOpen(false);
-                  router.push("/classes");
-                }}
-              />
-
-              <TouchableOpacity
-                style={styles.plusButton}
-                activeOpacity={0.9}
-                onPress={() => setPlusOpen((prev) => !prev)}
-              >
-                <Plus size={28} color="#fff" />
-              </TouchableOpacity>
-
-              <NavItem
-                label="Calendar"
-                Icon={CalendarIcon}
-                active={pathname === "/calendar"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  setUploadOpen(false);
-                  router.push("/calendar");
-                }}
-              />
-
-              <NavItem
-                label="Profile"
-                Icon={UserIcon}
-                active={pathname === "/profile"}
-                onPress={() => {
-                  setPlusOpen(false);
-                  setUploadOpen(false);
-                  router.push("/profile");
-                }}
-              />
-            </View>
-          )}
-        </View>
+        <RootShell />
       </AssignmentsProvider>
     </AuthProvider>
   );
@@ -133,14 +155,25 @@ export default function RootLayout() {
 
 type NavItemProps = {
   label: string;
-  Icon: React.ComponentType<{ size: number; color: string }>;
+  Icon: React.ComponentType<{
+    size: number;
+    color: string;
+  }>;
   active: boolean;
   onPress: () => void;
 };
 
-function NavItem({ label, Icon, active, onPress }: NavItemProps) {
+function NavItem({
+  label,
+  Icon,
+  active,
+  onPress,
+}: NavItemProps) {
   return (
-    <TouchableOpacity style={styles.navItem} onPress={onPress}>
+    <TouchableOpacity
+      style={styles.navItem}
+      onPress={onPress}
+    >
       <Icon
         size={24}
         color={active ? colors.lavender : "#E5E7EB"}

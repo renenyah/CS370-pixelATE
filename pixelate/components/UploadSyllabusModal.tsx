@@ -15,7 +15,12 @@ import { X, Wand2, FileText, Trash2 } from "lucide-react-native";
 
 import { colors } from "../constant/colors";
 import { API_BASE } from "../constant/api";
-import { Draft, safeISO, useAssignments } from "./AssignmentsContext";
+import {
+  Draft,
+  safeISO,
+  useAssignments,
+  AssignmentType,
+} from "./AssignmentsContext";
 
 type DueItem = {
   title: string;
@@ -24,13 +29,14 @@ type DueItem = {
   page?: number | null;
   course?: string;
   source?: string;
-  assignment_type?: string; // "assignment" | "quiz" | "test" | "presentation"
+  assignment_type?: string; // from backend
 };
 
 type ApiResponse = {
   status?: "ok" | "error";
   message?: string;
   items?: DueItem[];
+  course_name?: string;
 };
 
 type Props = {
@@ -41,6 +47,7 @@ type Props = {
 type Step = "upload" | "review";
 
 const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"];
+
 const CLASS_COLORS = [
   colors.lavender,
   colors.pink,
@@ -48,18 +55,39 @@ const CLASS_COLORS = [
   colors.blue,
   "#FDE68A",
 ];
-const ASSIGNMENT_TYPES: Draft["type"][] = [
+
+const TYPE_OPTIONS: AssignmentType[] = [
   "Assignment",
   "Quiz",
   "Test",
   "Presentation",
+  "Project",
+  "Reading",
+  "Discussion",
+  "Art",
+  "Other",
 ];
 
 function nextDraftId(): string {
   return `d_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export default function UploadSyllabusModal({ visible, onClose }: Props) {
+function mapBackendType(raw?: string | null): AssignmentType {
+  const t = (raw || "").toLowerCase();
+  if (t.includes("quiz")) return "Quiz";
+  if (t.includes("test") || t.includes("exam")) return "Test";
+  if (t.includes("present")) return "Presentation";
+  if (t.includes("project")) return "Project";
+  if (t.includes("reading")) return "Reading";
+  if (t.includes("discussion")) return "Discussion";
+  if (t.includes("art")) return "Art";
+  return "Assignment";
+}
+
+export default function UploadSyllabusModal({
+  visible,
+  onClose,
+}: Props) {
   const { addAssignmentsFromDrafts } = useAssignments();
 
   const [step, setStep] = useState<Step>("upload");
@@ -68,7 +96,9 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
   const [courseName, setCourseName] = useState("");
   const [semester, setSemester] = useState<string>("Fall");
   const [year, setYear] = useState<string>("2025");
-  const [folderColor, setFolderColor] = useState<string>(colors.lavender);
+  const [folderColor, setFolderColor] = useState<string>(
+    colors.lavender
+  );
   const [syllabusText, setSyllabusText] = useState("");
 
   const [parsing, setParsing] = useState(false);
@@ -78,6 +108,7 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
     setDrafts([]);
     setSyllabusText("");
     setStep("upload");
+    setAiRepair(false);
     onClose();
   };
 
@@ -85,26 +116,27 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
     Alert.alert("Upload failed", msg || "Server error");
   };
 
-  // map backend assignment_type -> Draft["type"]
-  const normalizeTypeFromBackend = (
-    t: string | undefined | null
-  ): Draft["type"] => {
-    const v = (t || "").toLowerCase().trim();
-    if (v.includes("quiz")) return "Quiz";
-    if (v.includes("exam") || v.includes("test")) return "Test";
-    if (v.includes("present")) return "Presentation";
-    return "Assignment";
-  };
-
   const makeDraftsFromItems = (items: DueItem[]) => {
+    const yearNum = Number(year || "");
+    const normalizedYear =
+      !isNaN(yearNum) && yearNum > 1900 ? yearNum : undefined;
+
     const ds: Draft[] = (items || []).map((it) => ({
       id: nextDraftId(),
       title: it.title || "Untitled",
       course: courseName || it.course || "",
-      type: normalizeTypeFromBackend(it.assignment_type),
-      // dueISO may already include time; safeISO keeps/normalizes it
-      dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
+      type: mapBackendType(it.assignment_type),
+      dueISO: safeISO(
+        it.due_date_iso || it.due_date_raw || null
+      ),
       description: "",
+      semester,
+      year: normalizedYear,
+      semesterLabel:
+        semester && normalizedYear
+          ? `${semester} ${normalizedYear}`
+          : undefined,
+      color: folderColor,
     }));
 
     if (!ds.length) {
@@ -132,9 +164,15 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
     closeAll();
   };
 
-  const updateDraft = (id: string, field: keyof Draft, value: string) => {
+  const updateDraft = (
+    id: string,
+    field: keyof Draft,
+    value: string | AssignmentType
+  ) => {
     setDrafts((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, [field]: value } : d))
+      prev.map((d) =>
+        d.id === id ? { ...d, [field]: value } : d
+      )
     );
   };
 
@@ -142,23 +180,30 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
     setDrafts((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const addEmptyDraft = () => {
-    setDrafts((prev) => [
-      ...prev,
-      {
-        id: nextDraftId(),
-        title: "",
-        course: courseName || "",
-        type: "Assignment",
-        // safeISO(null) → null or today; whatever your helper does
-        dueISO: safeISO(null),
-        description: "",
-      },
-    ]);
-    setStep("review");
+  const handleAddBlankDraft = () => {
+    const yearNum = Number(year || "");
+    const normalizedYear =
+      !isNaN(yearNum) && yearNum > 1900 ? yearNum : undefined;
+
+    const d: Draft = {
+      id: nextDraftId(),
+      title: "",
+      course: courseName,
+      type: "Assignment",
+      dueISO: null,
+      description: "",
+      semester,
+      year: normalizedYear,
+      semesterLabel:
+        semester && normalizedYear
+          ? `${semester} ${normalizedYear}`
+          : undefined,
+      color: folderColor,
+    };
+    setDrafts((prev) => [...prev, d]);
   };
 
-  // ---------------- PDF upload ----------------
+  // ------------ PDF ------------
   const handlePickPdf = useCallback(async () => {
     const res = await DocumentPicker.getDocumentAsync({
       type: ["application/pdf"],
@@ -180,7 +225,9 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
       );
 
       const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`;
+      const url = `${base}/assignments/pdf?use_llm=${
+        aiRepair ? "true" : "false"
+      }`;
       console.log("PDF →", url);
 
       const resp = await fetch(url, {
@@ -189,8 +236,14 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
       });
 
       if (!resp.ok) {
-        console.log("PDF resp not ok:", resp.status, resp.statusText);
-        return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
+        console.log(
+          "PDF resp not ok:",
+          resp.status,
+          resp.statusText
+        );
+        return handleBackendError(
+          `HTTP ${resp.status} – ${resp.statusText}`
+        );
       }
 
       let json: ApiResponse | any;
@@ -198,10 +251,17 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
         json = (await resp.json()) as ApiResponse;
       } catch (e: any) {
         console.log("PDF JSON parse error:", e);
-        return handleBackendError("Could not parse server response.");
+        return handleBackendError(
+          "Could not parse server response."
+        );
       }
 
       console.log("PDF resp →", JSON.stringify(json));
+
+      // If backend sends a detected course_name, keep it for manual additions
+      if (json.course_name && !courseName) {
+        setCourseName(json.course_name);
+      }
 
       const items = Array.isArray(json?.items)
         ? json.items
@@ -216,12 +276,15 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
     } finally {
       setParsing(false);
     }
-  }, [aiRepair, courseName]);
+  }, [aiRepair, courseName, semester, year, folderColor]);
 
-  // ---------------- TEXT parsing ----------------
+  // ------------ TEXT ------------
   const handleParseText = useCallback(async () => {
     if (!syllabusText.trim()) {
-      Alert.alert("Add some text", "Paste syllabus text first.");
+      Alert.alert(
+        "Add some text",
+        "Paste syllabus text first."
+      );
       return;
     }
     setParsing(true);
@@ -237,8 +300,14 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
       });
 
       if (!resp.ok) {
-        console.log("Text resp not ok:", resp.status, resp.statusText);
-        return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
+        console.log(
+          "Text resp not ok:",
+          resp.status,
+          resp.statusText
+        );
+        return handleBackendError(
+          `HTTP ${resp.status} – ${resp.statusText}`
+        );
       }
 
       let json: ApiResponse | any;
@@ -246,7 +315,9 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
         json = (await resp.json()) as ApiResponse;
       } catch (e: any) {
         console.log("Text JSON parse error:", e);
-        return handleBackendError("Could not parse server response.");
+        return handleBackendError(
+          "Could not parse server response."
+        );
       }
 
       console.log("Text resp →", json);
@@ -264,16 +335,23 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
     } finally {
       setParsing(false);
     }
-  }, [syllabusText, courseName]);
+  }, [syllabusText, courseName, semester, year, folderColor]);
 
-  // ---------------- RENDER ----------------
+  // ------------ RENDER ------------
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={closeAll}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={closeAll}
+    >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.headerRow}>
             <Text style={styles.title}>
-              {step === "upload" ? "Upload Syllabus" : "Review Assignments"}
+              {step === "upload"
+                ? "Upload Syllabus"
+                : "Review Assignments"}
             </Text>
             <TouchableOpacity onPress={closeAll}>
               <X size={22} color={colors.textPrimary} />
@@ -283,21 +361,35 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
           {step === "upload" ? (
             <>
               <Text style={styles.sub}>
-                Paste syllabus text or upload a PDF. We’ll extract assignments, dates,
-                and types. Toggle AI Repair to clean up dates.
+                Paste syllabus text or upload a PDF. We’ll
+                extract assignments and dates. Toggle AI
+                Repair to clean up dates.
               </Text>
 
               {/* AI toggle */}
               <View style={styles.aiRow}>
                 <TouchableOpacity
                   onPress={() => setAiRepair((v) => !v)}
-                  style={[styles.aiToggle, aiRepair && styles.aiToggleOn]}
+                  style={[
+                    styles.aiToggle,
+                    aiRepair && styles.aiToggleOn,
+                  ]}
                 >
                   <Wand2
                     size={18}
-                    color={aiRepair ? "#fff" : colors.textSecondary}
+                    color={
+                      aiRepair
+                        ? "#fff"
+                        : colors.textSecondary
+                    }
                   />
-                  <Text style={[styles.aiToggleText, aiRepair && styles.aiToggleTextOn]}>
+                  <Text
+                    style={[
+                      styles.aiToggleText,
+                      aiRepair &&
+                        styles.aiToggleTextOn,
+                    ]}
+                  >
                     AI Repair
                   </Text>
                 </TouchableOpacity>
@@ -305,12 +397,18 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
 
               <ScrollView
                 style={{ maxHeight: 420 }}
-                contentContainerStyle={{ paddingBottom: 8 }}
+                contentContainerStyle={{
+                  paddingBottom: 8,
+                }}
               >
-                <Text style={styles.label}>Class Name</Text>
+                <Text style={styles.label}>
+                  Class Name
+                </Text>
                 <TextInput
                   placeholder="e.g., CS 370 – Algorithms"
-                  placeholderTextColor={colors.textSecondary + "99"}
+                  placeholderTextColor={
+                    colors.textSecondary + "99"
+                  }
                   style={styles.input}
                   value={courseName}
                   onChangeText={setCourseName}
@@ -318,18 +416,27 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
 
                 <View style={styles.row}>
                   <View style={{ flex: 1, marginRight: 6 }}>
-                    <Text style={styles.label}>Semester</Text>
+                    <Text style={styles.label}>
+                      Semester
+                    </Text>
                     <View style={styles.chipRow}>
                       {SEMESTERS.map((s) => (
                         <TouchableOpacity
                           key={s}
-                          style={[styles.chip, semester === s && styles.chipActive]}
-                          onPress={() => setSemester(s)}
+                          style={[
+                            styles.chip,
+                            semester === s &&
+                              styles.chipActive,
+                          ]}
+                          onPress={() =>
+                            setSemester(s)
+                          }
                         >
                           <Text
                             style={[
                               styles.chipText,
-                              semester === s && styles.chipTextActive,
+                              semester === s &&
+                                styles.chipTextActive,
                             ]}
                           >
                             {s}
@@ -343,7 +450,9 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
                     <Text style={styles.label}>Year</Text>
                     <TextInput
                       placeholder="2025"
-                      placeholderTextColor={colors.textSecondary + "99"}
+                      placeholderTextColor={
+                        colors.textSecondary + "99"
+                      }
                       style={styles.input}
                       value={year}
                       onChangeText={setYear}
@@ -352,44 +461,59 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
                   </View>
                 </View>
 
-                <Text style={styles.label}>Folder Color</Text>
+                <Text style={styles.label}>
+                  Folder Color
+                </Text>
                 <View style={styles.colorRow}>
                   {CLASS_COLORS.map((c, idx) => (
                     <TouchableOpacity
                       key={`${c}-${idx}`}
-                      onPress={() => setFolderColor(c)}
+                      onPress={() =>
+                        setFolderColor(c)
+                      }
                       style={[
                         styles.colorDot,
                         { backgroundColor: c },
-                        folderColor === c && styles.colorDotActive,
+                        folderColor === c &&
+                          styles.colorDotActive,
                       ]}
                     />
                   ))}
                 </View>
 
-                <Text style={styles.label}>Syllabus Text</Text>
+                <Text style={styles.label}>
+                  Syllabus Text
+                </Text>
                 <TextInput
                   multiline
                   numberOfLines={5}
                   textAlignVertical="top"
                   placeholder="Paste syllabus text here…"
-                  placeholderTextColor={colors.textSecondary + "99"}
-                  style={[styles.input, { height: 120 }]}
+                  placeholderTextColor={
+                    colors.textSecondary + "99"
+                  }
+                  style={[
+                    styles.input,
+                    { height: 120 },
+                  ]}
                   value={syllabusText}
                   onChangeText={setSyllabusText}
                 />
 
-                {/* NOTE: image upload button has been moved to the single-assignment modal.
-                    We keep only the PDF button here. */}
                 <View style={styles.rowButtons}>
                   <TouchableOpacity
                     style={styles.fileBtn}
                     onPress={handlePickPdf}
                     disabled={parsing}
                   >
-                    <FileText size={18} color={colors.textPrimary} />
+                    <FileText
+                      size={18}
+                      color={colors.textPrimary}
+                    />
                     <Text style={styles.fileBtnText}>
-                      {parsing ? "Parsing…" : "Upload PDF"}
+                      {parsing
+                        ? "Parsing…"
+                        : "Upload PDF"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -397,28 +521,30 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
 
               <View style={styles.actionsRow}>
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.cancelBtn]}
+                  style={[
+                    styles.actionBtn,
+                    styles.cancelBtn,
+                  ]}
                   onPress={closeAll}
                   disabled={parsing}
                 >
-                  <Text style={styles.cancelText}>Cancel</Text>
+                  <Text style={styles.cancelText}>
+                    Cancel
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.secondaryBtn]}
-                  onPress={addEmptyDraft}
-                  disabled={parsing}
-                >
-                  <Text style={styles.secondaryText}>Skip & Add Manually</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionBtn, styles.primaryBtn]}
+                  style={[
+                    styles.actionBtn,
+                    styles.primaryBtn,
+                  ]}
                   onPress={handleParseText}
                   disabled={parsing}
                 >
                   <Text style={styles.primaryText}>
-                    {parsing ? "Parsing…" : "Parse Text"}
+                    {parsing
+                      ? "Parsing…"
+                      : "Parse Text"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -426,107 +552,203 @@ export default function UploadSyllabusModal({ visible, onClose }: Props) {
           ) : (
             <>
               <Text style={styles.sub}>
-                Review the extracted assignments. Edit anything that looks off, delete
-                rows you don’t want, or add new ones. To change the default 11:59pm
-                time, you can include a time in the date field like 2025-12-03T15:00.
+                Review the extracted assignments. Edit
+                anything that looks off, add new ones, or
+                delete rows you don’t want to keep.
               </Text>
 
               <ScrollView
                 style={{ maxHeight: 420 }}
-                contentContainerStyle={{ paddingBottom: 8 }}
+                contentContainerStyle={{
+                  paddingBottom: 8,
+                }}
               >
                 {drafts.map((d) => (
-                  <View key={d.id} style={styles.card}>
-                    <View style={styles.cardHeader}>
-                      <Text style={styles.cardLabel}>Assignment title</Text>
-                      <TouchableOpacity onPress={() => deleteDraft(d.id)}>
-                        <Trash2 size={18} color={colors.textSecondary} />
+                  <View
+                    key={d.id}
+                    style={styles.card}
+                  >
+                    <View
+                      style={styles.cardHeader}
+                    >
+                      <Text style={styles.cardLabel}>
+                        Assignment title
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() =>
+                          deleteDraft(d.id)
+                        }
+                      >
+                        <Trash2
+                          size={18}
+                          color={
+                            colors.textSecondary
+                          }
+                        />
                       </TouchableOpacity>
                     </View>
 
                     <TextInput
                       style={styles.input}
                       value={d.title}
-                      onChangeText={(t) => updateDraft(d.id, "title", t)}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "title",
+                          t
+                        )
+                      }
                       placeholder="Assignment title"
-                      placeholderTextColor={colors.textSecondary + "99"}
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
                     />
 
-                    <Text style={styles.cardLabel}>Class name</Text>
+                    <Text style={styles.cardLabel}>
+                      Class name
+                    </Text>
                     <TextInput
                       style={styles.input}
                       value={d.course}
-                      onChangeText={(t) => updateDraft(d.id, "course", t)}
-                      placeholder="e.g., CS 326 – Data Structures"
-                      placeholderTextColor={colors.textSecondary + "99"}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "course",
+                          t
+                        )
+                      }
+                      placeholder="e.g., AS 110-3 – Rome Sketchbook"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
                     />
 
-                    <Text style={styles.cardLabel}>Type</Text>
-                    <View style={styles.typeRow}>
-                      {ASSIGNMENT_TYPES.map((t) => (
-                        <TouchableOpacity
-                          key={t}
-                          style={[
-                            styles.typeChip,
-                            d.type === t && styles.typeChipActive,
-                          ]}
-                          onPress={() => updateDraft(d.id, "type", t)}
-                        >
-                          <Text
-                            style={[
-                              styles.typeChipText,
-                              d.type === t && styles.typeChipTextActive,
-                            ]}
-                          >
-                            {t}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-
                     <Text style={styles.cardLabel}>
-                      Due date &amp; time (YYYY-MM-DD or YYYY-MM-DDTHH:MM)
+                      Due date (YYYY-MM-DD or
+                      MM/DD/YYYY)
                     </Text>
                     <TextInput
                       style={styles.input}
                       value={d.dueISO || ""}
-                      onChangeText={(t) => updateDraft(d.id, "dueISO", t)}
-                      placeholder="2025-11-21 or 2025-11-21T15:00"
-                      placeholderTextColor={colors.textSecondary + "99"}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "dueISO",
+                          t
+                        )
+                      }
+                      placeholder="2025-02-03"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
                     />
 
-                    <Text style={styles.cardLabel}>Description (optional)</Text>
+                    <Text style={styles.cardLabel}>
+                      Type
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={
+                        false
+                      }
+                      style={{
+                        marginBottom: 4,
+                      }}
+                    >
+                      {TYPE_OPTIONS.map(
+                        (opt) => (
+                          <TouchableOpacity
+                            key={opt}
+                            style={[
+                              styles.typeChip,
+                              d.type === opt &&
+                                styles.typeChipActive,
+                            ]}
+                            onPress={() =>
+                              updateDraft(
+                                d.id,
+                                "type",
+                                opt
+                              )
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.typeChipText,
+                                d.type === opt &&
+                                  styles.typeChipTextActive,
+                              ]}
+                            >
+                              {opt}
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      )}
+                    </ScrollView>
+
+                    <Text style={styles.cardLabel}>
+                      Description (optional)
+                    </Text>
                     <TextInput
-                      style={[styles.input, { height: 70 }]}
+                      style={[
+                        styles.input,
+                        { height: 70 },
+                      ]}
                       multiline
                       textAlignVertical="top"
                       value={d.description || ""}
-                      onChangeText={(t) => updateDraft(d.id, "description", t)}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "description",
+                          t
+                        )
+                      }
                       placeholder="Notes or details…"
-                      placeholderTextColor={colors.textSecondary + "99"}
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
                     />
                   </View>
                 ))}
 
-                {/* NEW: add-rows button */}
-                <TouchableOpacity style={styles.addRowBtn} onPress={addEmptyDraft}>
-                  <Text style={styles.addRowText}>+ Add another assignment</Text>
+                <TouchableOpacity
+                  style={styles.addBtn}
+                  onPress={handleAddBlankDraft}
+                >
+                  <Text style={styles.addBtnText}>
+                    Add another assignment
+                  </Text>
                 </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.actionsRow}>
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.cancelBtn]}
+                  style={[
+                    styles.actionBtn,
+                    styles.cancelBtn,
+                  ]}
                   onPress={closeAll}
                 >
-                  <Text style={styles.cancelText}>Discard</Text>
+                  <Text style={styles.cancelText}>
+                    Discard
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.actionBtn, styles.primaryBtn]}
+                  style={[
+                    styles.actionBtn,
+                    styles.primaryBtn,
+                  ]}
                   onPress={handleSaveAssignments}
                 >
-                  <Text style={styles.primaryText}>Save assignments</Text>
+                  <Text style={styles.primaryText}>
+                    Save assignments
+                  </Text>
                 </TouchableOpacity>
               </View>
             </>
@@ -681,19 +903,12 @@ const styles = StyleSheet.create({
   cancelBtn: {
     backgroundColor: "#E5E7EB",
   },
-  secondaryBtn: {
-    backgroundColor: "#F3F4F6",
-  },
   primaryBtn: {
     backgroundColor: colors.blue,
   },
   cancelText: {
     color: colors.textPrimary,
     fontWeight: "800",
-  },
-  secondaryText: {
-    color: colors.textPrimary,
-    fontWeight: "700",
   },
   primaryText: {
     color: "#fff",
@@ -720,42 +935,37 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 4,
   },
-  typeRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-    marginBottom: 4,
-  },
   typeChip: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    backgroundColor: "#FFFFFF",
+    borderColor: "#E5E7EB",
+    marginRight: 6,
+    marginBottom: 4,
   },
   typeChipActive: {
-    backgroundColor: colors.lavender,
-    borderColor: colors.lavender,
+    backgroundColor: "#7C3AED",
+    borderColor: "#7C3AED",
   },
   typeChipText: {
     fontSize: 12,
+    color: "#111827",
     fontWeight: "600",
-    color: colors.textSecondary,
   },
   typeChipTextActive: {
     color: "#FFFFFF",
   },
-  addRowBtn: {
+  addBtn: {
     marginTop: 4,
-    paddingVertical: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#E5E7EB",
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
-  addRowText: {
-    fontWeight: "700",
-    color: colors.textPrimary,
+  addBtnText: {
+    fontWeight: "600",
+    color: "#111827",
   },
 });

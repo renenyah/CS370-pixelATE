@@ -48,9 +48,12 @@ export default function LoginScreen() {
     setLoading(true);
     const { error } = await signIn(email, password);
     setLoading(false);
-
+    
     if(error) {
       Alert.alert('Login Failed', error.message);
+    } else {
+      // Login successful - navigate to home
+      router.replace("/home");
     }
 
   }

@@ -16,9 +16,10 @@ export default function AuthCallback() {
       if (!code) {
         throw new Error('No verification code found');
       }
-
+      // Handle code as string (it might come as array from URL params)
+      const codeString = Array.isArray(code) ? code[0] : code;
       // Exchange the code for a session
-      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(codeString);
 
       if (error) {
         console.error('Email verification error:', error.message);
@@ -33,7 +34,7 @@ export default function AuthCallback() {
       if (data.session) {
         console.log('Email verified successfully!');
         // User is now logged in, redirect to home
-        router.replace('/(protected)/home');
+        router.replace('/home');
       }
     } catch (error) {
       console.error('Unexpected error during verification:', error);

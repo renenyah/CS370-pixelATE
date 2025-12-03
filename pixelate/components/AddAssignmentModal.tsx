@@ -15,7 +15,7 @@ import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { X, Image as ImageIcon, Trash2 } from "lucide-react-native";
+import { X, Image as ImageIcon } from "lucide-react-native";
 
 import {
   useAssignments,
@@ -25,6 +25,7 @@ import {
 } from "./AssignmentsContext";
 import { colors } from "../constant/colors";
 import { API_BASE } from "../constant/api";
+import DraftEditorModal from "./DraftEditorModal";
 
 type Props = {
   visible: boolean;
@@ -76,7 +77,7 @@ export default function AddAssignmentModal({
   const [description, setDescription] = useState("");
   const [type, setType] = useState<AssignmentType>("Assignment");
 
-  // Date & time state (with default 11:59 pm)
+  // Date & time state (default 11:59 pm)
   const defaultDate = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -94,11 +95,10 @@ export default function AddAssignmentModal({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // Extracted from image
+  // Extracted from image → edited in DraftEditorModal
   const [parsing, setParsing] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
-
-  const hasExtractedDrafts = drafts.length > 0;
+  const [showDraftEditor, setShowDraftEditor] = useState(false);
 
   const resetForm = () => {
     setTitle("");
@@ -108,6 +108,7 @@ export default function AddAssignmentModal({
     setDate(defaultDate);
     setTime(defaultTime);
     setDrafts([]);
+    setShowDraftEditor(false);
   };
 
   const closeAll = () => {
@@ -120,7 +121,6 @@ export default function AddAssignmentModal({
   };
 
   const combineDateTimeToString = (d: Date, t: Date): string => {
-    // Make a local Date that uses d's Y/M/D and t's H/M
     const combined = new Date(
       d.getFullYear(),
       d.getMonth(),
@@ -130,8 +130,6 @@ export default function AddAssignmentModal({
       0,
       0
     );
-    // Store as human-ish string that safeISO can still parse
-    // e.g. "11/21/2025 23:59"
     const mm = (combined.getMonth() + 1).toString().padStart(2, "0");
     const dd = combined.getDate().toString().padStart(2, "0");
     const yyyy = combined.getFullYear();
@@ -164,6 +162,15 @@ export default function AddAssignmentModal({
     closeAll();
   };
 
+  const capitalizeType = (raw: string): string => {
+    const lower = raw.toLowerCase();
+    if (lower.includes("quiz")) return "Quiz";
+    if (lower.includes("test") || lower.includes("exam")) return "Test";
+    if (lower.includes("presentation")) return "Project";
+    if (lower.includes("project")) return "Project";
+    return "Assignment";
+  };
+
   const makeDraftsFromItems = (items: DueItem[]) => {
     const ds: Draft[] = (items || []).map((it) => ({
       id: nextDraftId(),
@@ -173,9 +180,7 @@ export default function AddAssignmentModal({
         (it.assignment_type &&
           (capitalizeType(it.assignment_type) as AssignmentType)) ||
         "Assignment",
-      dueISO: safeISO(
-        it.due_date_iso || it.due_date_raw || null
-      ),
+      dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
       description: "",
     }));
 
@@ -188,26 +193,25 @@ export default function AddAssignmentModal({
     }
 
     setDrafts(ds);
+    setShowDraftEditor(true); // open separate popup
   };
 
-  const capitalizeType = (raw: string): string => {
-    const lower = raw.toLowerCase();
-    if (lower.includes("quiz")) return "Quiz";
-    if (lower.includes("test") || lower.includes("exam"))
-      return "Test";
-    if (lower.includes("presentation")) return "Project"; // closest type
-    if (lower.includes("project")) return "Project";
-    return "Assignment";
+  const handleSaveFromDraftEditor = (editedDrafts: Draft[]) => {
+    const normalized = editedDrafts.map((d) => ({
+      ...d,
+      dueISO: safeISO(d.dueISO || null),
+    }));
+    addAssignmentsFromDrafts(normalized);
+    closeAll();
   };
 
   // ------------ IMAGE / OCR ------------
   const handlePickImage = async () => {
-    const res =
-      await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 1,
-      });
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 1,
+    });
 
     if (res.canceled || !res.assets?.[0]) return;
 
@@ -219,9 +223,7 @@ export default function AddAssignmentModal({
         "file",
         {
           uri: asset.uri,
-          name:
-            asset.fileName ||
-            `image_${Date.now()}.jpg`,
+          name: asset.fileName || `image_${Date.now()}.jpg`,
           type: asset.type || "image/jpeg",
         } as any
       );
@@ -238,14 +240,8 @@ export default function AddAssignmentModal({
       });
 
       if (!resp.ok) {
-        console.log(
-          "Image resp not ok:",
-          resp.status,
-          resp.statusText
-        );
-        return handleBackendError(
-          `HTTP ${resp.status} – ${resp.statusText}`
-        );
+        console.log("Image resp not ok:", resp.status, resp.statusText);
+        return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
       }
 
       let json: ApiResponse | any;
@@ -253,9 +249,7 @@ export default function AddAssignmentModal({
         json = (await resp.json()) as ApiResponse;
       } catch (e: any) {
         console.log("Image JSON parse error:", e);
-        return handleBackendError(
-          "Could not parse server response."
-        );
+        return handleBackendError("Could not parse server response.");
       }
 
       console.log(
@@ -276,35 +270,6 @@ export default function AddAssignmentModal({
     } finally {
       setParsing(false);
     }
-  };
-
-  const updateDraft = (
-    id: string,
-    field: keyof Draft,
-    value: string
-  ) => {
-    setDrafts((prev) =>
-      prev.map((d) =>
-        d.id === id ? { ...d, [field]: value } : d
-      )
-    );
-  };
-
-  const deleteDraft = (id: string) => {
-    setDrafts((prev) => prev.filter((d) => d.id !== id));
-  };
-
-  const handleSaveExtracted = () => {
-    if (!drafts.length) {
-      Alert.alert("Nothing to save", "No extracted assignments.");
-      return;
-    }
-    const cleaned = drafts.map((d) => ({
-      ...d,
-      dueISO: safeISO(d.dueISO || null),
-    }));
-    addAssignmentsFromDrafts(cleaned);
-    closeAll();
   };
 
   const formattedDate = useMemo(
@@ -328,356 +293,197 @@ export default function AddAssignmentModal({
   );
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={closeAll}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.sheet}>
-          <View style={styles.headerRow}>
-            <Text style={styles.title}>
-              Add Assignment
-            </Text>
-            <TouchableOpacity onPress={closeAll}>
-              <X size={22} color={colors.textPrimary} />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView
-            style={{ maxHeight: 500 }}
-            contentContainerStyle={{
-              paddingBottom: 16,
-            }}
-          >
-            {/* Manual form */}
-            <Text style={styles.label}>Title</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., Homework 3 – Dynamic Programming"
-              placeholderTextColor={
-                colors.textSecondary + "99"
-              }
-              value={title}
-              onChangeText={setTitle}
-            />
-
-            <Text style={styles.label}>Class</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., CS 370 – Algorithms"
-              placeholderTextColor={
-                colors.textSecondary + "99"
-              }
-              value={course}
-              onChangeText={setCourse}
-            />
-
-            <Text style={styles.label}>
-              Assignment type
-            </Text>
-            <View style={styles.typeRow}>
-              {TYPE_OPTIONS.map((t) => (
-                <TouchableOpacity
-                  key={t}
-                  style={[
-                    styles.typeChip,
-                    type === t && styles.typeChipActive,
-                  ]}
-                  onPress={() => setType(t)}
-                >
-                  <Text
-                    style={[
-                      styles.typeChipText,
-                      type === t &&
-                        styles.typeChipTextActive,
-                    ]}
-                  >
-                    {t}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+    <>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeAll}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.sheet}>
+            <View style={styles.headerRow}>
+              <Text style={styles.title}>Add Assignment</Text>
+              <TouchableOpacity onPress={closeAll}>
+                <X size={22} color={colors.textPrimary} />
+              </TouchableOpacity>
             </View>
 
-            <View style={styles.row}>
-              <View style={{ flex: 1, marginRight: 6 }}>
-                <Text style={styles.label}>
-                  Due date
-                </Text>
-                <TouchableOpacity
-                  style={styles.pickerButton}
-                  onPress={() =>
-                    setShowDatePicker(true)
-                  }
-                >
-                  <Text style={styles.pickerButtonText}>
-                    {formattedDate}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <View style={{ flex: 1, marginLeft: 6 }}>
-                <Text style={styles.label}>
-                  Due time
-                </Text>
-                <TouchableOpacity
-                  style={styles.pickerButton}
-                  onPress={() =>
-                    setShowTimePicker(true)
-                  }
-                >
-                  <Text style={styles.pickerButtonText}>
-                    {formattedTime}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {showDatePicker && (
-              <DateTimePicker
-                value={date}
-                mode="date"
-                display={
-                  Platform.OS === "ios"
-                    ? "spinner"
-                    : "default"
-                }
-                onChange={(
-                  _event: DateTimePickerEvent,
-                  selected?: Date
-                ) => {
-                  if (Platform.OS !== "ios") {
-                    setShowDatePicker(false);
-                  }
-                  if (!selected) return;
-                  setDate(selected);
-                }}
-              />
-            )}
-
-            {showTimePicker && (
-              <DateTimePicker
-                value={time}
-                mode="time"
-                display={
-                  Platform.OS === "ios"
-                    ? "spinner"
-                    : "default"
-                }
-                onChange={(
-                  _event: DateTimePickerEvent,
-                  selected?: Date
-                ) => {
-                  if (Platform.OS !== "ios") {
-                    setShowTimePicker(false);
-                  }
-                  if (!selected) return;
-                  setTime(selected);
-                }}
-              />
-            )}
-
-            <Text style={styles.label}>
-              Description (optional)
-            </Text>
-            <TextInput
-              style={[styles.input, { height: 80 }]}
-              placeholder="Notes or details…"
-              placeholderTextColor={
-                colors.textSecondary + "99"
-              }
-              multiline
-              textAlignVertical="top"
-              value={description}
-              onChangeText={setDescription}
-            />
-
-            {/* Divider */}
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>
-                or upload an image
-              </Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <TouchableOpacity
-              style={styles.fileBtn}
-              onPress={handlePickImage}
-              disabled={parsing}
+            <ScrollView
+              style={{ maxHeight: 500 }}
+              contentContainerStyle={{ paddingBottom: 16 }}
             >
-              <ImageIcon
-                size={18}
-                color={colors.textPrimary}
-              />
-              <Text style={styles.fileBtnText}>
-                {parsing
-                  ? "Parsing…"
-                  : "Upload screenshot / photo"}
+              {/* 🔼 FIRST: Upload image option */}
+              <Text style={styles.label}>
+                Upload screenshot / photo
               </Text>
-            </TouchableOpacity>
-
-            {hasExtractedDrafts && (
-              <View style={{ marginTop: 16 }}>
-                <Text style={styles.label}>
-                  Extracted assignments
+              <TouchableOpacity
+                style={styles.fileBtn}
+                onPress={handlePickImage}
+                disabled={parsing}
+              >
+                <ImageIcon size={18} color={colors.textPrimary} />
+                <Text style={styles.fileBtnText}>
+                  {parsing ? "Parsing…" : "Upload image to extract assignments"}
                 </Text>
-                {drafts.map((d) => (
-                  <View
-                    key={d.id}
-                    style={styles.card}
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>
+                  or add manually
+                </Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Manual form */}
+              <Text style={styles.label}>Title</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., Homework 3 – Dynamic Programming"
+                placeholderTextColor={colors.textSecondary + "99"}
+                value={title}
+                onChangeText={setTitle}
+              />
+
+              <Text style={styles.label}>Class</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="e.g., CS 370 – Algorithms"
+                placeholderTextColor={colors.textSecondary + "99"}
+                value={course}
+                onChangeText={setCourse}
+              />
+
+              <Text style={styles.label}>Assignment type</Text>
+              <View style={styles.typeRow}>
+                {TYPE_OPTIONS.map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[
+                      styles.typeChip,
+                      type === t && styles.typeChipActive,
+                    ]}
+                    onPress={() => setType(t)}
                   >
-                    <View
-                      style={styles.cardHeader}
-                    >
-                      <Text
-                        style={styles.cardLabel}
-                      >
-                        Title
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() =>
-                          deleteDraft(d.id)
-                        }
-                      >
-                        <Trash2
-                          size={18}
-                          color={
-                            colors.textSecondary
-                          }
-                        />
-                      </TouchableOpacity>
-                    </View>
-                    <TextInput
-                      style={styles.input}
-                      value={d.title}
-                      onChangeText={(txt) =>
-                        updateDraft(
-                          d.id,
-                          "title",
-                          txt
-                        )
-                      }
-                      placeholder="Assignment title"
-                      placeholderTextColor={
-                        colors.textSecondary +
-                        "99"
-                      }
-                    />
-
                     <Text
-                      style={styles.cardLabel}
-                    >
-                      Class
-                    </Text>
-                    <TextInput
-                      style={styles.input}
-                      value={d.course}
-                      onChangeText={(txt) =>
-                        updateDraft(
-                          d.id,
-                          "course",
-                          txt
-                        )
-                      }
-                      placeholder="e.g., CS 370"
-                      placeholderTextColor={
-                        colors.textSecondary +
-                        "99"
-                      }
-                    />
-
-                    <Text
-                      style={styles.cardLabel}
-                    >
-                      Due date (YYYY-MM-DD)
-                    </Text>
-                    <TextInput
-                      style={styles.input}
-                      value={d.dueISO || ""}
-                      onChangeText={(txt) =>
-                        updateDraft(
-                          d.id,
-                          "dueISO",
-                          txt
-                        )
-                      }
-                      placeholder="2025-02-03"
-                      placeholderTextColor={
-                        colors.textSecondary +
-                        "99"
-                      }
-                    />
-
-                    <Text
-                      style={styles.cardLabel}
-                    >
-                      Description (optional)
-                    </Text>
-                    <TextInput
                       style={[
-                        styles.input,
-                        { height: 70 },
+                        styles.typeChipText,
+                        type === t && styles.typeChipTextActive,
                       ]}
-                      value={d.description || ""}
-                      onChangeText={(txt) =>
-                        updateDraft(
-                          d.id,
-                          "description",
-                          txt
-                        )
-                      }
-                      placeholder="Notes…"
-                      multiline
-                      textAlignVertical="top"
-                      placeholderTextColor={
-                        colors.textSecondary +
-                        "99"
-                      }
-                    />
-                  </View>
+                    >
+                      {t}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
               </View>
-            )}
-          </ScrollView>
 
-          {/* Actions */}
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                styles.cancelBtn,
-              ]}
-              onPress={closeAll}
-              disabled={parsing}
-            >
-              <Text style={styles.cancelText}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
+              <View style={styles.row}>
+                <View style={{ flex: 1, marginRight: 6 }}>
+                  <Text style={styles.label}>Due date</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => setShowDatePicker(true)}
+                  >
+                    <Text style={styles.pickerButtonText}>
+                      {formattedDate}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ flex: 1, marginLeft: 6 }}>
+                  <Text style={styles.label}>Due time</Text>
+                  <TouchableOpacity
+                    style={styles.pickerButton}
+                    onPress={() => setShowTimePicker(true)}
+                  >
+                    <Text style={styles.pickerButtonText}>
+                      {formattedTime}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-            <TouchableOpacity
-              style={[
-                styles.actionBtn,
-                styles.primaryBtn,
-              ]}
-              onPress={
-                hasExtractedDrafts
-                  ? handleSaveExtracted
-                  : handleSaveManual
-              }
-              disabled={parsing}
-            >
-              <Text style={styles.primaryText}>
-                {hasExtractedDrafts
-                  ? "Save extracted"
-                  : "Save assignment"}
-              </Text>
-            </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={date}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(
+                    _event: DateTimePickerEvent,
+                    selected?: Date
+                  ) => {
+                    if (Platform.OS !== "ios") {
+                      setShowDatePicker(false);
+                    }
+                    if (!selected) return;
+                    setDate(selected);
+                  }}
+                />
+              )}
+
+              {showTimePicker && (
+                <DateTimePicker
+                  value={time}
+                  mode="time"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={(
+                    _event: DateTimePickerEvent,
+                    selected?: Date
+                  ) => {
+                    if (Platform.OS !== "ios") {
+                      setShowTimePicker(false);
+                    }
+                    if (!selected) return;
+                    setTime(selected);
+                  }}
+                />
+              )}
+
+              <Text style={styles.label}>Description (optional)</Text>
+              <TextInput
+                style={[styles.input, { height: 80 }]}
+                placeholder="Notes or details…"
+                placeholderTextColor={colors.textSecondary + "99"}
+                multiline
+                textAlignVertical="top"
+                value={description}
+                onChangeText={setDescription}
+              />
+            </ScrollView>
+
+            {/* Actions for manual add */}
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.cancelBtn]}
+                onPress={closeAll}
+                disabled={parsing}
+              >
+                <Text style={styles.cancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionBtn, styles.primaryBtn]}
+                onPress={handleSaveManual}
+                disabled={parsing}
+              >
+                <Text style={styles.primaryText}>
+                  Save assignment
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {/* Separate popup to review & edit extracted assignments */}
+      <DraftEditorModal
+        visible={showDraftEditor}
+        initialDrafts={drafts}
+        onClose={() => setShowDraftEditor(false)}
+        onSave={handleSaveFromDraftEditor}
+      />
+    </>
   );
 }
 
@@ -816,26 +622,5 @@ const styles = StyleSheet.create({
   primaryText: {
     color: "#fff",
     fontWeight: "800",
-  },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: "#F9FAFB",
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  cardLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.textSecondary,
-    marginTop: 4,
-    marginBottom: 4,
   },
 });

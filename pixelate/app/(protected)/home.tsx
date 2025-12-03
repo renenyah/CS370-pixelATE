@@ -13,6 +13,8 @@ import {
   ArrowRight,
 } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import {
   useAssignments,
   todayISO,
@@ -22,14 +24,21 @@ import {
   labelFromSemesterYear,
   Assignment,
 } from "../../components/AssignmentsContext";
+import { useAuth } from "../../context/AuthContext";
 
 export default function HomeScreen() {
   const { assignments } = useAssignments();
+  const { user } = useAuth();
+
   const [now, setNow] = useState(new Date());
   const [todayCourse, setTodayCourse] = useState<string | "All">("All");
 
   const params = useLocalSearchParams<{ showTour?: string }>();
-  const [showTour, setShowTour] = useState(params.showTour === "1");
+
+  // --- onboarding tour state ---
+  const [showTour, setShowTour] = useState(
+    params.showTour === "1" // still allow ?showTour=1 for debugging
+  );
   const [tourStep, setTourStep] = useState(0);
 
   const tourSteps = [
@@ -65,14 +74,69 @@ export default function HomeScreen() {
     },
   ];
 
-  const handleSkipTour = () => setShowTour(false);
+  // Per-user storage key so the tour only shows the first time they log in
+  const tourStorageKey = useMemo(
+    () =>
+      user?.id
+        ? `pixelate_seen_tour_${user.id}`
+        : "pixelate_seen_tour_anon",
+    [user?.id]
+  );
+
+  // On first login for this user, show tour if they haven't seen it before
+  useEffect(() => {
+    let cancelled = false;
+
+    // If explicitly forced with /home?showTour=1, don’t override
+    if (params.showTour === "1") {
+      setShowTour(true);
+      return;
+    }
+
+    const run = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(
+          tourStorageKey
+        );
+        if (!cancelled && stored !== "true") {
+          setShowTour(true);
+        }
+      } catch {
+        // If anything fails, just show the tour once
+        if (!cancelled) {
+          setShowTour(true);
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.showTour, tourStorageKey]);
+
+  const markTourSeen = async () => {
+    setShowTour(false);
+    try {
+      await AsyncStorage.setItem(tourStorageKey, "true");
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const handleSkipTour = () => {
+    markTourSeen();
+  };
+
   const handleNextTour = () => {
     if (tourStep >= tourSteps.length - 1) {
-      setShowTour(false);
+      markTourSeen();
     } else {
       setTourStep((i) => i + 1);
     }
   };
+
+  // --- existing time / stats logic (unchanged) ---
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60 * 1000);
@@ -90,8 +154,7 @@ export default function HomeScreen() {
     day: "numeric",
   });
 
-  // ------- Filter assignments: current semester + not completed -------
-
+  // Current semester label
   const currentSemesterLabel = useMemo(() => {
     const m = now.getMonth() + 1;
     const y = now.getFullYear();
@@ -100,14 +163,15 @@ export default function HomeScreen() {
     return `Fall ${y}`;
   }, [now]);
 
+  // Only show non-completed assignments in the current semester
   const activeAssignments: Assignment[] = useMemo(
     () =>
       assignments.filter((a) => {
-        // hide completed ones
         if (a.completed) return false;
-
-        // if semester/year stored, only show current semester
-        const label = labelFromSemesterYear(a.semester, a.year);
+        const label = labelFromSemesterYear(
+          a.semester,
+          a.year
+        );
         if (label && label !== currentSemesterLabel) {
           return false;
         }
@@ -134,7 +198,9 @@ export default function HomeScreen() {
 
   const dueToday = useMemo(() => {
     if (todayCourse === "All") return dueTodayAll;
-    return dueTodayAll.filter((a) => a.course === todayCourse);
+    return dueTodayAll.filter(
+      (a) => a.course === todayCourse
+    );
   }, [dueTodayAll, todayCourse]);
 
   const upcoming7 = useMemo(
@@ -193,7 +259,10 @@ export default function HomeScreen() {
                 { backgroundColor: "#FEE2E2" },
               ]}
             >
-              <AlertCircle size={20} color="#DC2626" />
+              <AlertCircle
+                size={20}
+                color="#DC2626"
+              />
             </View>
             <Text style={styles.statTitle}>Overdue</Text>
             <Text
@@ -209,7 +278,9 @@ export default function HomeScreen() {
 
         {/* Today */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today’s Assignments</Text>
+          <Text style={styles.sectionTitle}>
+            Today’s Assignments
+          </Text>
 
           <ScrollView
             horizontal
@@ -236,7 +307,10 @@ export default function HomeScreen() {
           ) : (
             <View style={{ gap: 10 }}>
               {dueToday.map((a) => (
-                <AssignmentCard key={a.id} assignment={a} />
+                <AssignmentCard
+                  key={a.id}
+                  assignment={a}
+                />
               ))}
             </View>
           )}
@@ -245,8 +319,12 @@ export default function HomeScreen() {
         {/* Upcoming section */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>Upcoming</Text>
-            <Text style={styles.sectionSub}>Next 7 days</Text>
+            <Text style={styles.sectionTitle}>
+              Upcoming
+            </Text>
+            <Text style={styles.sectionSub}>
+              Next 7 days
+            </Text>
           </View>
 
           {upcoming7.length === 0 ? (
@@ -256,10 +334,15 @@ export default function HomeScreen() {
               {upcoming7
                 .slice()
                 .sort((a, b) =>
-                  (a.dueISO || "").localeCompare(b.dueISO || "")
+                  (a.dueISO || "").localeCompare(
+                    b.dueISO || ""
+                  )
                 )
                 .map((a) => (
-                  <AssignmentCard key={a.id} assignment={a} />
+                  <AssignmentCard
+                    key={a.id}
+                    assignment={a}
+                  />
                 ))}
             </View>
           )}
@@ -269,9 +352,13 @@ export default function HomeScreen() {
         {overdue.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Overdue</Text>
+              <Text style={styles.sectionTitle}>
+                Overdue
+              </Text>
               <View style={styles.badgeDanger}>
-                <Text style={styles.badgeDangerText}>
+                <Text
+                  style={styles.badgeDangerText}
+                >
                   Needs attention
                 </Text>
               </View>
@@ -281,10 +368,15 @@ export default function HomeScreen() {
               {overdue
                 .slice()
                 .sort((a, b) =>
-                  (a.dueISO || "").localeCompare(b.dueISO || "")
+                  (a.dueISO || "").localeCompare(
+                    b.dueISO || ""
+                  )
                 )
                 .map((a) => (
-                  <AssignmentCard key={a.id} assignment={a} />
+                  <AssignmentCard
+                    key={a.id}
+                    assignment={a}
+                  />
                 ))}
             </View>
           </View>
@@ -295,9 +387,12 @@ export default function HomeScreen() {
       {showTour && (
         <View style={styles.tourOverlay}>
           <View style={styles.tourCard}>
-            <Text style={styles.tourTitle}>Quick tour</Text>
+            <Text style={styles.tourTitle}>
+              Quick tour
+            </Text>
             <Text style={styles.tourStepLabel}>
-              Step {tourStep + 1} of {tourSteps.length}
+              Step {tourStep + 1} of{" "}
+              {tourSteps.length}
             </Text>
             <Text style={styles.tourItemTitle}>
               {tourSteps[tourStep].title}
@@ -311,7 +406,9 @@ export default function HomeScreen() {
                 style={styles.tourSecondaryButton}
                 onPress={handleSkipTour}
               >
-                <Text style={styles.tourSecondaryText}>
+                <Text
+                  style={styles.tourSecondaryText}
+                >
                   Skip tour
                 </Text>
               </TouchableOpacity>
@@ -319,8 +416,11 @@ export default function HomeScreen() {
                 style={styles.tourPrimaryButton}
                 onPress={handleNextTour}
               >
-                <Text style={styles.tourPrimaryText}>
-                  {tourStep === tourSteps.length - 1
+                <Text
+                  style={styles.tourPrimaryText}
+                >
+                  {tourStep ===
+                  tourSteps.length - 1
                     ? "Finish"
                     : "Next"}
                 </Text>
@@ -362,39 +462,76 @@ function EmptyCard({ text }: { text: string }) {
   );
 }
 
-function AssignmentCard({ assignment }: { assignment: Assignment }) {
-  const { toggleAssignmentCompleted } = useAssignments();
+function AssignmentCard({
+  assignment,
+}: {
+  assignment: Assignment;
+}) {
+  const { toggleAssignmentCompleted } =
+    useAssignments();
 
   const dueLabel = assignment.dueISO
-    ? new Date(assignment.dueISO).toLocaleDateString()
+    ? new Date(
+        assignment.dueISO
+      ).toLocaleDateString()
     : null;
 
   let dotColor = "#10B981";
-  if (assignment.priority === "high") dotColor = "#EF4444";
-  else if (assignment.priority === "medium") dotColor = "#F59E0B";
+  if (assignment.priority === "high")
+    dotColor = "#EF4444";
+  else if (assignment.priority === "medium")
+    dotColor = "#F59E0B";
 
   return (
     <View style={styles.card}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.cardTitle}>{assignment.title}</Text>
+        <Text style={styles.cardTitle}>
+          {assignment.title}
+        </Text>
         {!!assignment.course && (
-          <Text style={styles.cardCourse}>{assignment.course}</Text>
+          <Text style={styles.cardCourse}>
+            {assignment.course}
+          </Text>
         )}
-        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginTop: 4,
+          }}
+        >
           {!!dueLabel && (
-            <Text style={styles.cardMeta}>Due {dueLabel}</Text>
+            <Text style={styles.cardMeta}>
+              Due {dueLabel}
+            </Text>
           )}
           <TouchableOpacity
             style={styles.doneButton}
-            onPress={() => toggleAssignmentCompleted(assignment.id)}
+            onPress={() =>
+              toggleAssignmentCompleted(
+                assignment.id
+              )
+            }
           >
-            <Text style={styles.doneButtonText}>Done</Text>
+            <Text
+              style={styles.doneButtonText}
+            >
+              Done
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
       <View style={styles.cardRight}>
-        <View style={[styles.dot, { backgroundColor: dotColor }]} />
-        <ArrowRight size={18} color="#9CA3AF" />
+        <View
+          style={[
+            styles.dot,
+            { backgroundColor: dotColor },
+          ]}
+        />
+        <ArrowRight
+          size={18}
+          color="#9CA3AF"
+        />
       </View>
     </View>
   );

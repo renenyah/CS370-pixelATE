@@ -146,6 +146,15 @@ export default function SignupScreen() {
             style={styles.input}
             placeholderTextColor={COLORS.textSub}
           />
+          <Text style={[styles.label, { marginTop: 14 }]}>Confirm Password</Text>
+          <TextInput
+            value={confirm}
+            onChangeText={setConfirm}
+            placeholder="Confirm your password"
+            secureTextEntry
+            style={styles.input}
+            placeholderTextColor={COLORS.textSub}
+          />
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 

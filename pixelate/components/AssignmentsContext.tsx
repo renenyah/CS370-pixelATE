@@ -17,7 +17,7 @@ export type AssignmentType =
   | "Quiz"
   | "Test"
   | "Project"
-  | "Presentation" // 👈 added this
+  | "Presentation"
   | "Other";
 
 export type Assignment = {
@@ -31,7 +31,7 @@ export type Assignment = {
   source?: string;
   page?: number | null;
 
-  // New optional metadata for folders
+  // Optional metadata for folders / filters
   semester?: string;
   year?: number;
   color?: string;
@@ -51,10 +51,29 @@ export type Draft = {
   color?: string;
 };
 
+export type ClassFolder = {
+  id: string;
+  name: string;
+  color: string;
+  semester?: string;
+  year?: number;
+};
+
+type AddClassFolderInput = {
+  name: string;
+  color: string;
+  semester?: string;
+  year?: number;
+};
+
 type AssignmentsContextValue = {
   assignments: Assignment[];
+  classes: ClassFolder[];
   addAssignmentsFromDrafts: (drafts: Draft[]) => void;
+  addClassFolder: (input: AddClassFolderInput) => void;
 };
+
+// ---------- Context / hook ----------
 
 const AssignmentsContext = createContext<
   AssignmentsContextValue | undefined
@@ -79,7 +98,7 @@ export const todayISO: string = new Date()
 export function safeISO(input?: string | null): string | null {
   if (!input) return null;
 
-  // already ISO?
+  // already ISO yyyy-mm-dd?
   const isoMatch = input.match(/^\d{4}-\d{2}-\d{2}$/);
   if (isoMatch) return isoMatch[0];
 
@@ -158,10 +177,15 @@ export function AssignmentsProvider({
   const [assignments, setAssignments] = useState<
     Assignment[]
   >([]);
+  const [classes, setClasses] = useState<ClassFolder[]>(
+    []
+  );
 
-  const value = useMemo(
+  const value: AssignmentsContextValue = useMemo(
     () => ({
       assignments,
+      classes,
+
       addAssignmentsFromDrafts: (drafts: Draft[]) => {
         if (!drafts?.length) return;
         setAssignments((prev) => [
@@ -182,8 +206,42 @@ export function AssignmentsProvider({
           })),
         ]);
       },
+
+      addClassFolder: ({
+        name,
+        color,
+        semester,
+        year,
+      }: AddClassFolderInput) => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+
+        setClasses((prev) => {
+          // avoid exact duplicates by name + semester/year
+          const exists = prev.some(
+            (c) =>
+              c.name.toLowerCase() ===
+                trimmed.toLowerCase() &&
+              (c.semester || "") === (semester || "") &&
+              (c.year ?? undefined) ===
+                (year ?? undefined)
+          );
+          if (exists) return prev;
+
+          return [
+            ...prev,
+            {
+              id: nextId("c"),
+              name: trimmed,
+              color,
+              semester,
+              year,
+            },
+          ];
+        });
+      },
     }),
-    [assignments]
+    [assignments, classes]
   );
 
   return (

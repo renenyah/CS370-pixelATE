@@ -22,10 +22,10 @@ import { AssignmentsProvider } from "../components/AssignmentsContext";
 import { AuthProvider } from "../context/AuthContext";
 import { colors } from "../constant/colors";
 
-const AUTH_ROUTES = ["/login", "/signup", "/auth/callback"];
+const AUTH_ROUTES = ["/login", "/signup"];
 export const NAV_HEIGHT = 88;
 
-function RootShell() {
+export default function RootLayout() {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -37,117 +37,114 @@ function RootShell() {
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* All screens in the app */}
-      <Stack screenOptions={{ headerShown: false }} />
-
-      {/* + menu (only on main app screens, not login/signup/callback) */}
-      {!isAuthRoute && plusOpen && (
-        <PlusMenu
-          onClose={() => setPlusOpen(false)}
-          onUploadSyllabus={() => {
-            setPlusOpen(false);
-            setUploadOpen(true);
-          }}
-          onAddClass={() => {
-            setPlusOpen(false);
-            router.push("/classes");
-          }}
-          onAddAssignment={() => {
-            setPlusOpen(false);
-            setAddAssignmentOpen(true);
-          }}
-        />
-      )}
-
-      {/* Upload syllabus modal (LLM + PDF/text) */}
-      {!isAuthRoute && (
-        <UploadSyllabusModal
-          visible={uploadOpen}
-          onClose={() => setUploadOpen(false)}
-        />
-      )}
-
-      {/* Add assignment modal (manual + image upload) */}
-      {!isAuthRoute && (
-        <AddAssignmentModal
-          visible={addAssignmentOpen}
-          onClose={() => setAddAssignmentOpen(false)}
-        />
-      )}
-
-      {/* Bottom nav bar (hidden on login/signup/callback) */}
-      {!isAuthRoute && (
-        <View style={styles.navBar}>
-          <NavItem
-            label="Home"
-            Icon={HomeIcon}
-            active={
-              pathname === "/home" || pathname === "/"
-            }
-            onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              router.push("/home");
-            }}
-          />
-
-          <NavItem
-            label="Classes"
-            Icon={FolderIcon}
-            active={pathname === "/classes"}
-            onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              router.push("/classes");
-            }}
-          />
-
-          <TouchableOpacity
-            style={styles.plusButton}
-            activeOpacity={0.9}
-            onPress={() => setPlusOpen((prev) => !prev)}
-          >
-            <Plus size={28} color="#fff" />
-          </TouchableOpacity>
-
-          <NavItem
-            label="Calendar"
-            Icon={CalendarIcon}
-            active={pathname === "/calendar"}
-            onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              router.push("/calendar");
-            }}
-          />
-
-          <NavItem
-            label="Profile"
-            Icon={UserIcon}
-            active={pathname === "/profile"}
-            onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              router.push("/profile");
-            }}
-          />
-        </View>
-      )}
-    </View>
-  );
-}
-
-// Wrap everything in Auth + Assignments providers
-export default function RootLayout() {
-  return (
     <AuthProvider>
       <AssignmentsProvider>
-        <RootShell />
+        <View style={{ flex: 1 }}>
+          {/* All screens in the app */}
+          <Stack screenOptions={{ headerShown: false }} />
+
+          {/* + menu (only on main app screens, not login/signup) */}
+          {!isAuthRoute && plusOpen && (
+            <PlusMenu
+              onClose={() => setPlusOpen(false)}
+              onUploadSyllabus={() => {
+                setPlusOpen(false);
+                setUploadOpen(true);
+              }}
+              onAddClass={() => {
+                setPlusOpen(false);
+                // simple: send them to Classes tab; you can later
+                // open a specific "new class" modal from there
+                router.push("/classes");
+              }}
+              onAddAssignment={() => {
+                // 🔥 THIS is the important part:
+                // close menu, open AddAssignmentModal
+                setPlusOpen(false);
+                setAddAssignmentOpen(true);
+              }}
+            />
+          )}
+
+          {/* Modals that live at root */}
+          {!isAuthRoute && (
+            <>
+              <UploadSyllabusModal
+                visible={uploadOpen}
+                onClose={() => setUploadOpen(false)}
+              />
+              <AddAssignmentModal
+                visible={addAssignmentOpen}
+                onClose={() => setAddAssignmentOpen(false)}
+              />
+            </>
+          )}
+
+          {/* Bottom nav bar (hidden on login/signup) */}
+          {!isAuthRoute && (
+            <View style={styles.navBar}>
+              <NavItem
+                label="Home"
+                Icon={HomeIcon}
+                active={
+                  pathname === "/home" || pathname === "/"
+                }
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  setAddAssignmentOpen(false);
+                  router.push("/home");
+                }}
+              />
+
+              <NavItem
+                label="Classes"
+                Icon={FolderIcon}
+                active={pathname === "/classes"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  setAddAssignmentOpen(false);
+                  router.push("/classes");
+                }}
+              />
+
+              <TouchableOpacity
+                style={styles.plusButton}
+                activeOpacity={0.9}
+                onPress={() =>
+                  setPlusOpen((prev) => !prev)
+                }
+              >
+                <Plus size={28} color="#fff" />
+              </TouchableOpacity>
+
+              <NavItem
+                label="Calendar"
+                Icon={CalendarIcon}
+                active={pathname === "/calendar"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  setAddAssignmentOpen(false);
+                  router.push("/calendar");
+                }}
+              />
+
+              <NavItem
+                label="Profile"
+                Icon={UserIcon}
+                active={pathname === "/profile"}
+                onPress={() => {
+                  setPlusOpen(false);
+                  setUploadOpen(false);
+                  setAddAssignmentOpen(false);
+                  router.push("/profile");
+                }}
+              />
+            </View>
+          )}
+        </View>
       </AssignmentsProvider>
     </AuthProvider>
   );

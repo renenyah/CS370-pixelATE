@@ -1,4 +1,4 @@
-// app/profile.tsx
+// app/(protected)/profile.tsx
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -9,17 +9,37 @@ import {
   ScrollView,
   Alert,
 } from "react-native";
+import { useRouter } from "expo-router";
+import { useAuth } from "../../context/AuthContext";
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const { user, signOut } = useAuth();
+
   const [now, setNow] = useState(new Date());
   const [studentName, setStudentName] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
   const [password, setPassword] = useState("");
 
+  // keep header time updated
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60 * 1000);
     return () => clearInterval(id);
   }, []);
+
+  // hydrate from auth user
+  useEffect(() => {
+    if (!user) return;
+
+    setStudentEmail(user.email ?? "");
+
+    const meta: any = user.user_metadata || {};
+    const nameFromMeta =
+      meta.full_name || meta.name || meta.username;
+    if (nameFromMeta) {
+      setStudentName(nameFromMeta);
+    }
+  }, [user]);
 
   const timeLabel = now.toLocaleTimeString([], {
     hour: "numeric",
@@ -33,13 +53,30 @@ export default function ProfileScreen() {
   });
 
   const initials =
-    (studentName ||
-      "Student") // default
+    (studentName || "Student")
       .split(" ")
       .filter(Boolean)
       .slice(0, 2)
       .map((s) => s[0]?.toUpperCase())
       .join("") || "ST";
+
+  const handleSaveProfile = () => {
+    // You can later connect this to Supabase to update user metadata.
+    Alert.alert(
+      "Profile saved",
+      "Your profile info will sync with your account in a future version."
+    );
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (e) {
+      // even if signOut fails, still try to push back to login
+    } finally {
+      router.replace("/login");
+    }
+  };
 
   return (
     <ScrollView
@@ -60,7 +97,14 @@ export default function ProfileScreen() {
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{initials}</Text>
         </View>
-        <Text style={styles.profileLabel}>Profile</Text>
+        <View>
+          <Text style={styles.profileLabel}>Profile</Text>
+          {studentEmail ? (
+            <Text style={styles.profileEmail}>
+              {studentEmail}
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {/* Card */}
@@ -98,11 +142,17 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.saveButton}
           activeOpacity={0.9}
-          onPress={() =>
-            Alert.alert("Profile saved", "This will connect to your backend later.")
-          }
+          onPress={handleSaveProfile}
         >
           <Text style={styles.saveText}>Save Profile</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.logoutButton}
+          activeOpacity={0.9}
+          onPress={handleLogout}
+        >
+          <Text style={styles.logoutText}>Log out</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -154,6 +204,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111827",
   },
+  profileEmail: {
+    marginTop: 2,
+    fontSize: 13,
+    color: "#6B7280",
+  },
 
   card: {
     backgroundColor: "#FFFFFF",
@@ -194,5 +249,17 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 16,
+  },
+  logoutButton: {
+    marginTop: 12,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 999,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  logoutText: {
+    color: "#B91C1C",
+    fontWeight: "700",
+    fontSize: 15,
   },
 });

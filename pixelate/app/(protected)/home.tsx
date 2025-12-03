@@ -1,4 +1,4 @@
-// app/home.tsx
+// app/(protected)/home.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -13,6 +13,8 @@ import {
   ArrowRight,
 } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 import {
   useAssignments,
   todayISO,
@@ -20,63 +22,108 @@ import {
   within7Days,
   isOverdue,
 } from "../../components/AssignmentsContext";
+import { useAuth } from "../../context/AuthContext";
 
 export default function HomeScreen() {
   const { assignments } = useAssignments();
+  const { user } = useAuth();
+
   const [now, setNow] = useState(new Date());
   const [todayCourse, setTodayCourse] = useState<string | "All">("All");
 
-  // Read `showTour` query param: /home?showTour=1
   const params = useLocalSearchParams<{ showTour?: string }>();
-  const [showTour, setShowTour] = useState(params.showTour === "1");
+
+  const [showTour, setShowTour] = useState(false);
   const [tourStep, setTourStep] = useState(0);
 
   const tourSteps = [
     {
       key: "home",
-      title: "Home",
+      title: "Home dashboard",
       description:
-        "See what’s due today, what’s coming up this week, and anything overdue.",
+        "See what’s due today, what’s coming up this week, and anything overdue in one place.",
     },
     {
       key: "classes",
-      title: "Classes",
+      title: "Classes tab",
       description:
-        "Tap the Classes tab to open a folder view of each course and all its assignments.",
+        "Use the Classes tab to open each class folder, filter by semester, and see all assignments for that course.",
     },
     {
       key: "plus",
-      title: "+ menu",
+      title: "Plus menu",
       description:
-        "Use the big + button to upload a syllabus, add a class, or add a single assignment.",
+        "Tap the + button to upload a syllabus, add a class folder, or add assignments from a photo or manually.",
     },
     {
       key: "calendar",
-      title: "Calendar",
+      title: "Calendar tab",
       description:
-        "The Calendar tab shows your assignments on a monthly, weekly, or daily calendar.",
+        "View your assignments laid out on a calendar so you can plan ahead week by week or month by month.",
     },
     {
       key: "profile",
-      title: "Profile",
+      title: "Profile & account",
       description:
-        "Update your basic info in Profile. Later this will connect to Supabase auth.",
+        "Update your basic info and log out from the Profile tab. This keeps your account synced with Supabase.",
     },
   ];
 
-  const handleSkipTour = () => setShowTour(false);
+  // --- First-time-only tour logic ---
+  const tourKey =
+    user && user.id ? `hasSeenNavTour_${user.id}` : null;
+
+  useEffect(() => {
+    // keep the clock updating
+    const id = setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const initTour = async () => {
+      // dev override: /home?showTour=1 forces the tour
+      if (params.showTour === "1") {
+        setShowTour(true);
+        setTourStep(0);
+        return;
+      }
+
+      if (!tourKey) return;
+      try {
+        const flag = await AsyncStorage.getItem(tourKey);
+        if (!flag) {
+          // first time for this user
+          setShowTour(true);
+          setTourStep(0);
+        }
+      } catch {
+        // if storage fails, just don't block the app
+      }
+    };
+    initTour();
+  }, [params.showTour, tourKey]);
+
+  const markTourSeen = async () => {
+    setShowTour(false);
+    if (!tourKey) return;
+    try {
+      await AsyncStorage.setItem(tourKey, "1");
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  const handleSkipTour = () => {
+    void markTourSeen();
+  };
+
   const handleNextTour = () => {
     if (tourStep >= tourSteps.length - 1) {
-      setShowTour(false);
+      void markTourSeen();
     } else {
       setTourStep((i) => i + 1);
     }
   };
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
 
   const timeLabel = now.toLocaleTimeString([], {
     hour: "numeric",
@@ -264,11 +311,11 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-      {/* Walkthrough overlay */}
+      {/* Walkthrough overlay (first login only, or ?showTour=1) */}
       {showTour && (
         <View style={styles.tourOverlay}>
           <View style={styles.tourCard}>
-            <Text style={styles.tourTitle}>Quick tour</Text>
+            <Text style={styles.tourTitle}>Quick navigation tour</Text>
             <Text style={styles.tourStepLabel}>
               Step {tourStep + 1} of {tourSteps.length}
             </Text>

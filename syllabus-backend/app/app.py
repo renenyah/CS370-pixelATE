@@ -1,4 +1,3 @@
-# app/app.py
 from __future__ import annotations
 
 import os
@@ -151,6 +150,7 @@ async def assignments_pdf_upload(
         pdf_info = extract_assignments_from_pdf_bytes(data)
         course_name = pdf_info.get("course_name") or ""
         items = pdf_info.get("items") or []
+        full_text = pdf_info.get("full_text") or ""
 
         # Mark source for PDF pipeline so UI can tell later if it wants to
         for it in items:
@@ -162,11 +162,18 @@ async def assignments_pdf_upload(
         if use_llm and items:
             ok, reason = is_gemini_ready()
             if ok:
-                # Build a single concatenated text for LLM context
-                text_blob = "\n".join(
+                # Prefer the entire PDF text for Gemini context
+                # Fallback to a small summary if full_text is empty
+                text_blob = full_text or "\n".join(
                     f"- {it.get('title','')}  (due: {it.get('due_date_raw','')})"
                     for it in items
                 )
+
+                # Optional: truncate very long syllabi for safety / cost
+                # Adjust this limit if needed.
+                max_chars = int(os.getenv("PDF_LLM_MAX_CHARS", "20000"))
+                text_blob = text_blob[:max_chars]
+
                 result = repair_due_items(text_blob, seed_items=items)
                 llm_items = result.get("items", items)
                 llm_used = True

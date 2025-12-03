@@ -13,117 +13,71 @@ import {
   ArrowRight,
 } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-
 import {
   useAssignments,
   todayISO,
   isSameISO,
   within7Days,
   isOverdue,
+  labelFromSemesterYear,
+  Assignment,
 } from "../../components/AssignmentsContext";
-import { useAuth } from "../../context/AuthContext";
 
 export default function HomeScreen() {
   const { assignments } = useAssignments();
-  const { user } = useAuth();
-
   const [now, setNow] = useState(new Date());
   const [todayCourse, setTodayCourse] = useState<string | "All">("All");
 
   const params = useLocalSearchParams<{ showTour?: string }>();
-
-  const [showTour, setShowTour] = useState(false);
+  const [showTour, setShowTour] = useState(params.showTour === "1");
   const [tourStep, setTourStep] = useState(0);
 
   const tourSteps = [
     {
       key: "home",
-      title: "Home dashboard",
+      title: "Home",
       description:
-        "See what’s due today, what’s coming up this week, and anything overdue in one place.",
+        "See what’s due today, what’s coming up this week, and anything overdue.",
     },
     {
       key: "classes",
-      title: "Classes tab",
+      title: "Classes",
       description:
-        "Use the Classes tab to open each class folder, filter by semester, and see all assignments for that course.",
+        "Tap the Classes tab to open a folder view of each course and all its assignments.",
     },
     {
       key: "plus",
-      title: "Plus menu",
+      title: "+ menu",
       description:
-        "Tap the + button to upload a syllabus, add a class folder, or add assignments from a photo or manually.",
+        "Use the big + button to upload a syllabus, add a class, or add a single assignment.",
     },
     {
       key: "calendar",
-      title: "Calendar tab",
+      title: "Calendar",
       description:
-        "View your assignments laid out on a calendar so you can plan ahead week by week or month by month.",
+        "The Calendar tab shows your assignments on a monthly, weekly, or daily calendar.",
     },
     {
       key: "profile",
-      title: "Profile & account",
+      title: "Profile",
       description:
-        "Update your basic info and log out from the Profile tab. This keeps your account synced with Supabase.",
+        "Update your info in Profile and log out when you’re done.",
     },
   ];
 
-  // --- First-time-only tour logic ---
-  const tourKey =
-    user && user.id ? `hasSeenNavTour_${user.id}` : null;
-
-  useEffect(() => {
-    // keep the clock updating
-    const id = setInterval(() => setNow(new Date()), 60 * 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    const initTour = async () => {
-      // dev override: /home?showTour=1 forces the tour
-      if (params.showTour === "1") {
-        setShowTour(true);
-        setTourStep(0);
-        return;
-      }
-
-      if (!tourKey) return;
-      try {
-        const flag = await AsyncStorage.getItem(tourKey);
-        if (!flag) {
-          // first time for this user
-          setShowTour(true);
-          setTourStep(0);
-        }
-      } catch {
-        // if storage fails, just don't block the app
-      }
-    };
-    initTour();
-  }, [params.showTour, tourKey]);
-
-  const markTourSeen = async () => {
-    setShowTour(false);
-    if (!tourKey) return;
-    try {
-      await AsyncStorage.setItem(tourKey, "1");
-    } catch {
-      // ignore storage errors
-    }
-  };
-
-  const handleSkipTour = () => {
-    void markTourSeen();
-  };
-
+  const handleSkipTour = () => setShowTour(false);
   const handleNextTour = () => {
     if (tourStep >= tourSteps.length - 1) {
-      void markTourSeen();
+      setShowTour(false);
     } else {
       setTourStep((i) => i + 1);
     }
   };
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const timeLabel = now.toLocaleTimeString([], {
     hour: "numeric",
@@ -136,20 +90,46 @@ export default function HomeScreen() {
     day: "numeric",
   });
 
+  // ------- Filter assignments: current semester + not completed -------
+
+  const currentSemesterLabel = useMemo(() => {
+    const m = now.getMonth() + 1;
+    const y = now.getFullYear();
+    if (m <= 5) return `Spring ${y}`;
+    if (m <= 8) return `Summer ${y}`;
+    return `Fall ${y}`;
+  }, [now]);
+
+  const activeAssignments: Assignment[] = useMemo(
+    () =>
+      assignments.filter((a) => {
+        // hide completed ones
+        if (a.completed) return false;
+
+        // if semester/year stored, only show current semester
+        const label = labelFromSemesterYear(a.semester, a.year);
+        if (label && label !== currentSemesterLabel) {
+          return false;
+        }
+        return true;
+      }),
+    [assignments, currentSemesterLabel]
+  );
+
   const courses = useMemo(() => {
     const s = new Set<string>();
-    assignments.forEach((a) => {
+    activeAssignments.forEach((a) => {
       if (a.course) s.add(a.course);
     });
     return Array.from(s);
-  }, [assignments]);
+  }, [activeAssignments]);
 
   const dueTodayAll = useMemo(
     () =>
-      assignments.filter((a) =>
+      activeAssignments.filter((a) =>
         isSameISO(a.dueISO || null, todayISO)
       ),
-    [assignments]
+    [activeAssignments]
   );
 
   const dueToday = useMemo(() => {
@@ -159,18 +139,18 @@ export default function HomeScreen() {
 
   const upcoming7 = useMemo(
     () =>
-      assignments.filter((a) =>
+      activeAssignments.filter((a) =>
         within7Days(a.dueISO || null)
       ),
-    [assignments]
+    [activeAssignments]
   );
 
   const overdue = useMemo(
     () =>
-      assignments.filter((a) =>
+      activeAssignments.filter((a) =>
         isOverdue(a.dueISO || null)
       ),
-    [assignments]
+    [activeAssignments]
   );
 
   return (
@@ -311,11 +291,11 @@ export default function HomeScreen() {
         )}
       </ScrollView>
 
-      {/* Walkthrough overlay (first login only, or ?showTour=1) */}
+      {/* Walkthrough overlay */}
       {showTour && (
         <View style={styles.tourOverlay}>
           <View style={styles.tourCard}>
-            <Text style={styles.tourTitle}>Quick navigation tour</Text>
+            <Text style={styles.tourTitle}>Quick tour</Text>
             <Text style={styles.tourStepLabel}>
               Step {tourStep + 1} of {tourSteps.length}
             </Text>
@@ -382,7 +362,9 @@ function EmptyCard({ text }: { text: string }) {
   );
 }
 
-function AssignmentCard({ assignment }: { assignment: any }) {
+function AssignmentCard({ assignment }: { assignment: Assignment }) {
+  const { toggleAssignmentCompleted } = useAssignments();
+
   const dueLabel = assignment.dueISO
     ? new Date(assignment.dueISO).toLocaleDateString()
     : null;
@@ -398,9 +380,17 @@ function AssignmentCard({ assignment }: { assignment: any }) {
         {!!assignment.course && (
           <Text style={styles.cardCourse}>{assignment.course}</Text>
         )}
-        {!!dueLabel && (
-          <Text style={styles.cardMeta}>Due {dueLabel}</Text>
-        )}
+        <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
+          {!!dueLabel && (
+            <Text style={styles.cardMeta}>Due {dueLabel}</Text>
+          )}
+          <TouchableOpacity
+            style={styles.doneButton}
+            onPress={() => toggleAssignmentCompleted(assignment.id)}
+          >
+            <Text style={styles.doneButtonText}>Done</Text>
+          </TouchableOpacity>
+        </View>
       </View>
       <View style={styles.cardRight}>
         <View style={[styles.dot, { backgroundColor: dotColor }]} />
@@ -541,7 +531,6 @@ const styles = StyleSheet.create({
   },
   cardMeta: {
     color: "#6D28D9",
-    marginTop: 2,
     fontWeight: "600",
     fontSize: 12,
   },
@@ -555,6 +544,19 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
+  doneButton: {
+    marginLeft: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+  },
+  doneButtonText: {
+    fontSize: 11,
+    color: "#6B7280",
+    fontWeight: "600",
+  },
 
   // Walkthrough styles
   tourOverlay: {
@@ -566,7 +568,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15,23,42,0.4)",
     justifyContent: "flex-end",
     paddingHorizontal: 20,
-    paddingBottom: 110, // leave room for bottom nav
+    paddingBottom: 110,
   },
   tourCard: {
     backgroundColor: "#FFFFFF",

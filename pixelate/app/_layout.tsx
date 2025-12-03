@@ -17,6 +17,7 @@ import {
 
 import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
+import AddClassModal from "../components/AddClassModal";
 import AddAssignmentModal from "../components/AddAssignmentModal";
 import { AssignmentsProvider } from "../components/AssignmentsContext";
 import { AuthProvider } from "../context/AuthContext";
@@ -31,7 +32,9 @@ export default function RootLayout() {
 
   const [plusOpen, setPlusOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [addAssignmentOpen, setAddAssignmentOpen] =
+  const [showAddClassModal, setShowAddClassModal] =
+    useState(false);
+  const [showAddAssignmentModal, setShowAddAssignmentModal] =
     useState(false);
 
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
@@ -53,31 +56,37 @@ export default function RootLayout() {
               }}
               onAddClass={() => {
                 setPlusOpen(false);
-                // simple: send them to Classes tab; you can later
-                // open a specific "new class" modal from there
-                router.push("/classes");
+                setShowAddClassModal(true);
               }}
               onAddAssignment={() => {
-                // 🔥 THIS is the important part:
-                // close menu, open AddAssignmentModal
                 setPlusOpen(false);
-                setAddAssignmentOpen(true);
+                setShowAddAssignmentModal(true);
               }}
             />
           )}
 
-          {/* Modals that live at root */}
+          {/* Upload syllabus modal (centered) */}
           {!isAuthRoute && (
-            <>
-              <UploadSyllabusModal
-                visible={uploadOpen}
-                onClose={() => setUploadOpen(false)}
-              />
-              <AddAssignmentModal
-                visible={addAssignmentOpen}
-                onClose={() => setAddAssignmentOpen(false)}
-              />
-            </>
+            <UploadSyllabusModal
+              visible={uploadOpen}
+              onClose={() => setUploadOpen(false)}
+            />
+          )}
+
+          {/* Add class folder modal (same position as upload syllabus) */}
+          {!isAuthRoute && (
+            <AddClassModal
+              visible={showAddClassModal}
+              onClose={() => setShowAddClassModal(false)}
+            />
+          )}
+
+          {/* Add assignment modal (same position as upload syllabus) */}
+          {!isAuthRoute && (
+            <AddAssignmentModal
+              visible={showAddAssignmentModal}
+              onClose={() => setShowAddAssignmentModal(false)}
+            />
           )}
 
           {/* Bottom nav bar (hidden on login/signup) */}
@@ -86,13 +95,12 @@ export default function RootLayout() {
               <NavItem
                 label="Home"
                 Icon={HomeIcon}
-                active={
-                  pathname === "/home" || pathname === "/"
-                }
+                active={pathname === "/home" || pathname === "/"}
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  setAddAssignmentOpen(false);
+                  setShowAddClassModal(false);
+                  setShowAddAssignmentModal(false);
                   router.push("/home");
                 }}
               />
@@ -104,7 +112,8 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  setAddAssignmentOpen(false);
+                  setShowAddClassModal(false);
+                  setShowAddAssignmentModal(false);
                   router.push("/classes");
                 }}
               />
@@ -126,7 +135,8 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  setAddAssignmentOpen(false);
+                  setShowAddClassModal(false);
+                  setShowAddAssignmentModal(false);
                   router.push("/calendar");
                 }}
               />
@@ -138,7 +148,8 @@ export default function RootLayout() {
                 onPress={() => {
                   setPlusOpen(false);
                   setUploadOpen(false);
-                  setAddAssignmentOpen(false);
+                  setShowAddClassModal(false);
+                  setShowAddAssignmentModal(false);
                   router.push("/profile");
                 }}
               />

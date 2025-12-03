@@ -21,25 +21,22 @@ export default function ProfileScreen() {
   const [studentEmail, setStudentEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // keep header time updated
+  // Sync fields from Supabase user when it changes
+  useEffect(() => {
+    if (user) {
+      const fullName =
+        user.user_metadata?.full_name ||
+        user.user_metadata?.name ||
+        "";
+      setStudentName(fullName);
+      setStudentEmail(user.email || "");
+    }
+  }, [user]);
+
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60 * 1000);
     return () => clearInterval(id);
   }, []);
-
-  // hydrate from auth user
-  useEffect(() => {
-    if (!user) return;
-
-    setStudentEmail(user.email ?? "");
-
-    const meta: any = user.user_metadata || {};
-    const nameFromMeta =
-      meta.full_name || meta.name || meta.username;
-    if (nameFromMeta) {
-      setStudentName(nameFromMeta);
-    }
-  }, [user]);
 
   const timeLabel = now.toLocaleTimeString([], {
     hour: "numeric",
@@ -61,20 +58,33 @@ export default function ProfileScreen() {
       .join("") || "ST";
 
   const handleSaveProfile = () => {
-    // You can later connect this to Supabase to update user metadata.
+    // Right now this is just UI feedback.
+    // Later you can call supabase.auth.updateUser({ data: { full_name: studentName } })
     Alert.alert(
       "Profile saved",
-      "Your profile info will sync with your account in a future version."
+      "This will connect to your backend later."
     );
   };
 
   const handleLogout = async () => {
     try {
-      await signOut();
-    } catch (e) {
-      // even if signOut fails, still try to push back to login
-    } finally {
+      const { error } = await signOut();
+      if (error) {
+        console.error("Sign-out error:", error);
+        Alert.alert(
+          "Error",
+          "There was a problem logging out. Please try again."
+        );
+        return;
+      }
+      // On success → back to login/signup
       router.replace("/login");
+    } catch (e) {
+      console.error("Unexpected logout error:", e);
+      Alert.alert(
+        "Error",
+        "Unexpected error while logging out."
+      );
     }
   };
 
@@ -86,7 +96,11 @@ export default function ProfileScreen() {
     >
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.welcome}>Welcome! 📚</Text>
+        <Text style={styles.welcome}>
+          {studentName
+            ? `Hi, ${studentName.split(" ")[0]} 👋`
+            : "Welcome! 📚"}
+        </Text>
         <Text style={styles.sub}>
           {timeLabel} • {dateLabel}
         </Text>
@@ -99,11 +113,11 @@ export default function ProfileScreen() {
         </View>
         <View>
           <Text style={styles.profileLabel}>Profile</Text>
-          {studentEmail ? (
+          {!!studentEmail && (
             <Text style={styles.profileEmail}>
               {studentEmail}
             </Text>
-          ) : null}
+          )}
         </View>
       </View>
 
@@ -147,12 +161,13 @@ export default function ProfileScreen() {
           <Text style={styles.saveText}>Save Profile</Text>
         </TouchableOpacity>
 
+        {/* Logout button */}
         <TouchableOpacity
           style={styles.logoutButton}
           activeOpacity={0.9}
           onPress={handleLogout}
         >
-          <Text style={styles.logoutText}>Log out</Text>
+          <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -206,8 +221,8 @@ const styles = StyleSheet.create({
   },
   profileEmail: {
     marginTop: 2,
-    fontSize: 13,
     color: "#6B7280",
+    fontSize: 13,
   },
 
   card: {
@@ -252,14 +267,15 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     marginTop: 12,
-    backgroundColor: "#FEE2E2",
     borderRadius: 999,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#DC2626",
   },
   logoutText: {
-    color: "#B91C1C",
+    color: "#DC2626",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 16,
   },
 });

@@ -3,261 +3,307 @@ import React, { useState } from "react";
 import {
   View,
   Text,
-  StyleSheet,
   TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
+  StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
-import { Mail, Lock, User } from "lucide-react-native";
-import { useAuth } from '../context/AuthContext';
-
-const COLORS = {
-  bg: "#FDF2FF",
-  card: "#FFFFFF",
-  primary: "#A2D2FF",
-  primaryDark: "#6498C6",
-  accent: "#FFC8DD",
-  accent2: "#CDB4DB",
-  textMain: "#111827",
-  textSub: "#6B7280",
-  border: "#E5E7EB",
-};
+import { Eye, EyeOff, ArrowLeft } from "lucide-react-native";
+import { useAuth } from "../context/AuthContext";
+import { colors } from "../constant/colors";
 
 export default function SignupScreen() {
   const router = useRouter();
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const { signUp } = useAuth();
+
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+
   const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { signUp } = useAuth() as any;
+  const [confirmPassword, setConfirmPassword] = useState("");
 
-  const [error, setError] = useState("");
-  const [showGuide, setShowGuide] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
+  const [submitting, setSubmitting] = useState(false);
+  const [errorText, setErrorText] = useState("");
+  const [infoText, setInfoText] = useState("");
 
-  const onSignup = async () => {
-    if (
-      !firstName.trim() ||
-      !lastName.trim() ||
-      !email.trim() ||
-      !password.trim()
-    ) {
-      setError("Please fill out all fields.");
+  const handleSignup = async () => {
+    setErrorText("");
+    setInfoText("");
+
+    if (!name.trim() || !email.trim() || !password) {
+      setErrorText("Please fill in name, email, and password.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setErrorText("Passwords do not match.");
       return;
     }
 
-    if (password !== confirm) {
-      Alert.alert("Password mismatch", "Passwords do not match.");
-      return;
+    try {
+      setSubmitting(true);
+      const { error } = await signUp(email.trim(), password, name.trim());
+
+      if (error) {
+        console.error("Sign up error:", error);
+        setErrorText(
+          error.message || "Something went wrong. Please try again."
+        );
+      } else {
+        setInfoText(
+          "Check your email to verify your account, then log in."
+        );
+        // Optionally send them back to login:
+        // router.replace("/login");
       }
-
-    if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters');
-      return;
+    } catch (e: any) {
+      console.error("Unexpected sign up error:", e);
+      setErrorText("Unexpected error. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setLoading(true);
-    const { error } = await signUp(email, password);
-    setLoading(false);
-
-    if (error){
-      Alert.alert('Sign Up Failed', error.message);
-    } else {
-      Alert.alert(
-        'Success!',
-        'Account created successfully. Please check your email to confirm.',
-        [{ text: 'OK', onPress: () => router.replace("/login") }]
-      );
-    }
-  } 
-
-  const handleStartApp = () => {
-    setShowGuide(false);
-    router.replace("/home");
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: COLORS.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+    <View style={styles.screen}>
+      {/* Back to login */}
+      <TouchableOpacity
+        style={styles.backRow}
+        onPress={() => router.replace("/login")}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.appName}>PIXELATE</Text>
-          <Text style={styles.title}>Create your account ✨</Text>
-          <Text style={styles.subtitle}>
-            Sign up so we can keep all your syllabi and assignments organized.
-          </Text>
+        <ArrowLeft size={20} color="#E5E7EB" />
+        <Text style={styles.backText}>Back to Login</Text>
+      </TouchableOpacity>
+
+      <View style={styles.card}>
+        <Text style={styles.title}>Create your account</Text>
+        <Text style={styles.subtitle}>
+          Sign up to start organizing your syllabi.
+        </Text>
+
+        {/* Name */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Your name"
+            placeholderTextColor="#6B7280"
+            value={name}
+            onChangeText={setName}
+          />
         </View>
 
-        {/* Card */}
-        <View style={styles.card}>
-          <View style={{ flexDirection: "row", gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>First name</Text>
-              <TextInput
-                value={firstName}
-                onChangeText={setFirstName}
-                placeholder="First name"
-                style={styles.input}
-                placeholderTextColor={COLORS.textSub}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Last name</Text>
-              <TextInput
-                value={lastName}
-                onChangeText={setLastName}
-                placeholder="Last name"
-                style={styles.input}
-                placeholderTextColor={COLORS.textSub}
-              />
-            </View>
-          </View>
-
-          <Text style={[styles.label, { marginTop: 14 }]}>School email</Text>
+        {/* Email */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Email</Text>
           <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="your.email@school.edu"
+            style={styles.input}
+            placeholder="you@school.edu"
+            placeholderTextColor="#6B7280"
             keyboardType="email-address"
             autoCapitalize="none"
-            style={styles.input}
-            placeholderTextColor={COLORS.textSub}
+            value={email}
+            onChangeText={setEmail}
           />
-
-          <Text style={[styles.label, { marginTop: 14 }]}>Password</Text>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Create a password"
-            secureTextEntry
-            style={styles.input}
-            placeholderTextColor={COLORS.textSub}
-          />
-          <Text style={[styles.label, { marginTop: 14 }]}>Confirm Password</Text>
-          <TextInput
-            value={confirm}
-            onChangeText={setConfirm}
-            placeholder="Confirm your password"
-            secureTextEntry
-            style={styles.input}
-            placeholderTextColor={COLORS.textSub}
-          />
-
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
-          <TouchableOpacity style={styles.primaryButton} onPress={onSignup}>
-            <Text style={styles.primaryButtonText}>Sign up</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Footer */}
-        <View style={styles.footerRow}>
-          <Text style={styles.footerText}>Already have an account?</Text>
-          <TouchableOpacity onPress={() => router.replace("/login")}>
-            <Text style={styles.footerLink}> Log in</Text>
-          </TouchableOpacity>
+        {/* Password */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Password</Text>
+          <View style={styles.passwordRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, paddingRight: 40 }]}
+              placeholder="Enter password"
+              placeholderTextColor="#6B7280"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowPassword((prev) => !prev)}
+            >
+              {showPassword ? (
+                <EyeOff size={20} color="#9CA3AF" />
+              ) : (
+                <Eye size={20} color="#9CA3AF" />
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+        {/* Confirm Password */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Confirm Password</Text>
+          <View style={styles.passwordRow}>
+            <TextInput
+              style={[styles.input, { flex: 1, paddingRight: 40 }]}
+              placeholder="Re-enter password"
+              placeholderTextColor="#6B7280"
+              secureTextEntry={!showConfirm}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowConfirm((prev) => !prev)}
+            >
+              {showConfirm ? (
+                <EyeOff size={20} color="#9CA3AF" />
+              ) : (
+                <Eye size={20} color="#9CA3AF" />
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Error / info messages */}
+        {errorText ? (
+          <Text style={styles.errorText}>{errorText}</Text>
+        ) : null}
+        {infoText ? (
+          <Text style={styles.infoText}>{infoText}</Text>
+        ) : null}
+
+        {/* Submit button */}
+        <TouchableOpacity
+          style={[
+            styles.primaryButton,
+            submitting && { opacity: 0.7 },
+          ]}
+          onPress={handleSignup}
+          activeOpacity={0.9}
+          disabled={submitting}
+        >
+          {submitting ? (
+            <ActivityIndicator color="#0B1220" />
+          ) : (
+            <Text style={styles.primaryButtonText}>
+              Sign Up
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Already have account */}
+        <TouchableOpacity
+          style={styles.inlineLinkRow}
+          onPress={() => router.replace("/login")}
+        >
+          <Text style={styles.inlineText}>
+            Already have an account?{" "}
+          </Text>
+          <Text style={styles.inlineLink}>Log in</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
+  screen: {
+    flex: 1,
+    backgroundColor: "#020617", // dark, matches login vibe
     paddingHorizontal: 24,
     paddingTop: 80,
-    paddingBottom: 40,
   },
-  header: {
-    marginBottom: 32,
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 24,
   },
-  appName: {
-    fontSize: 16,
-    fontWeight: "700",
-    letterSpacing: 2,
-    color: COLORS.accent2,
-    marginBottom: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: COLORS.textMain,
-  },
-  subtitle: {
-    marginTop: 8,
+  backText: {
+    color: "#E5E7EB",
+    marginLeft: 6,
     fontSize: 14,
-    color: COLORS.textSub,
-    maxWidth: "90%",
   },
   card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 24,
+    backgroundColor: "#0B1220",
+    borderRadius: 20,
     padding: 20,
     shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
+    shadowOpacity: 0.35,
+    shadowRadius: 22,
     shadowOffset: { width: 0, height: 10 },
-    elevation: 5,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#F9FAFB",
+  },
+  subtitle: {
+    color: "#9CA3AF",
+    marginTop: 4,
+    marginBottom: 18,
+    fontSize: 13,
+  },
+  field: {
+    marginBottom: 12,
   },
   label: {
+    color: "#E5E7EB",
     fontSize: 13,
+    marginBottom: 4,
     fontWeight: "600",
-    color: COLORS.textMain,
-    marginBottom: 6,
   },
   input: {
+    backgroundColor: "#020617",
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: "#1F2937",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#F9FAFB",
     fontSize: 14,
-    color: COLORS.textMain,
-    backgroundColor: "#F9FAFB",
+  },
+  passwordRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  eyeButton: {
+    position: "absolute",
+    right: 10,
+    height: "100%",
+    justifyContent: "center",
+  },
+  errorText: {
+    color: "#FCA5A5",
+    marginTop: 4,
+    marginBottom: 4,
+    fontSize: 12,
+  },
+  infoText: {
+    color: "#6EE7B7",
+    marginTop: 4,
+    marginBottom: 4,
+    fontSize: 12,
   },
   primaryButton: {
-    marginTop: 20,
-    backgroundColor: COLORS.primary,
+    marginTop: 12,
+    backgroundColor: colors.lavender || "#A855F7",
+    paddingVertical: 12,
     borderRadius: 999,
     alignItems: "center",
-    paddingVertical: 14,
   },
   primaryButtonText: {
-    color: "#111827",
+    color: "#0B1220",
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: 15,
   },
-  footerRow: {
-    marginTop: 16,
+  inlineLinkRow: {
+    marginTop: 14,
     flexDirection: "row",
     justifyContent: "center",
   },
-  footerText: {
-    color: COLORS.textSub,
+  inlineText: {
+    color: "#9CA3AF",
     fontSize: 13,
   },
-  footerLink: {
-    color: COLORS.accent,
-    fontWeight: "700",
+  inlineLink: {
+    color: colors.lavender || "#A855F7",
     fontSize: 13,
-  },
-  errorText: {
-    color: "#DC2626",
-    marginTop: 6,
-    fontSize: 12,
+    fontWeight: "600",
   },
 });

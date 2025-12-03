@@ -3,14 +3,16 @@ import React from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
+  TouchableOpacity,
+  Modal,
+  TouchableWithoutFeedback,
 } from "react-native";
 import {
-  X,
   FileText,
   FolderPlus,
   PlusCircle,
+  X,
 } from "lucide-react-native";
 import { colors } from "../constant/colors";
 
@@ -28,72 +30,84 @@ export default function PlusMenu({
   onAddAssignment,
 }: Props) {
   return (
-    <View style={styles.overlay}>
-      {/* tap outside to close */}
-      <TouchableOpacity
-        style={StyleSheet.absoluteFill}
-        activeOpacity={1}
-        onPress={onClose}
-      />
+    <Modal
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      {/* Dim background */}
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          {/* Stop touch from propagating when pressing inside card */}
+          <TouchableWithoutFeedback>
+            <View style={styles.card}>
+              {/* Header row */}
+              <View style={styles.headerRow}>
+                <Text style={styles.title}>
+                  Quick actions
+                </Text>
+                <TouchableOpacity onPress={onClose}>
+                  <X
+                    size={20}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
 
-      <View style={styles.sheet}>
-        <View style={styles.headerRow}>
-          <Text style={styles.title}>Quick actions</Text>
-          <TouchableOpacity onPress={onClose}>
-            <X size={18} color={colors.textPrimary} />
-          </TouchableOpacity>
+              <Text style={styles.subtitle}>
+                Choose how you want to add your assignments.
+              </Text>
+
+              {/* Options */}
+              <View style={styles.options}>
+                <MenuItem
+                  icon={
+                    <FileText
+                      size={20}
+                      color={colors.lavender}
+                    />
+                  }
+                  label="Upload syllabus"
+                  description="Parse a PDF or image to auto-add assignments."
+                  onPress={onUploadSyllabus}
+                />
+
+                <MenuItem
+                  icon={
+                    <FolderPlus
+                      size={20}
+                      color={colors.blue}
+                    />
+                  }
+                  label="Add class folder"
+                  description="Create a new class and color folder."
+                  onPress={onAddClass}
+                />
+
+                <MenuItem
+                  icon={
+                    <PlusCircle
+                      size={20}
+                      color={colors.pink}
+                    />
+                  }
+                  label="Add assignment"
+                  description="Add a single assignment or from an image."
+                  onPress={onAddAssignment}
+                />
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
         </View>
-
-        <MenuItem
-          icon={
-            <View style={styles.iconCircle}>
-              <FileText size={18} color="#fff" />
-            </View>
-          }
-          label="Upload syllabus"
-          description="Scan a PDF or image for assignments."
-          onPress={() => {
-            onClose();
-            onUploadSyllabus();
-          }}
-        />
-
-        <MenuItem
-          icon={
-            <View style={[styles.iconCircle, { backgroundColor: "#F97316" }]}>
-              <FolderPlus size={18} color="#fff" />
-            </View>
-          }
-          label="Add class folder"
-          description="Create a new course folder."
-          onPress={() => {
-            onClose();
-            onAddClass();
-          }}
-        />
-
-        <MenuItem
-          icon={
-            <View style={[styles.iconCircle, { backgroundColor: "#10B981" }]}>
-              <PlusCircle size={18} color="#fff" />
-            </View>
-          }
-          label="Add assignment"
-          description="Add one or more assignments (with or without an image)."
-          onPress={() => {
-            onClose();
-            onAddAssignment();
-          }}
-        />
-      </View>
-    </View>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 }
 
 type MenuItemProps = {
   icon: React.ReactNode;
   label: string;
-  description?: string;
+  description: string;
   onPress: () => void;
 };
 
@@ -105,16 +119,14 @@ function MenuItem({
 }: MenuItemProps) {
   return (
     <TouchableOpacity
-      style={styles.itemRow}
+      style={styles.item}
       activeOpacity={0.9}
       onPress={onPress}
     >
-      {icon}
+      <View style={styles.iconWrap}>{icon}</View>
       <View style={{ flex: 1 }}>
         <Text style={styles.itemLabel}>{label}</Text>
-        {!!description && (
-          <Text style={styles.itemDesc}>{description}</Text>
-        )}
+        <Text style={styles.itemDesc}>{description}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -122,54 +134,59 @@ function MenuItem({
 
 const styles = StyleSheet.create({
   overlay: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+    flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",
-    justifyContent: "flex-end",
+    justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingBottom: 96, // leaves room above bottom nav
+    paddingHorizontal: 24,
   },
-  sheet: {
-    width: "80%",
+  card: {
+    width: "100%",
     maxWidth: 360,
-    backgroundColor: colors.cardBackground,
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     shadowColor: "#000",
-    shadowOpacity: 0.18,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
     elevation: 8,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   title: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "700",
     color: colors.textPrimary,
   },
-  itemRow: {
+  subtitle: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 10,
+  },
+  options: {
+    marginTop: 4,
+    gap: 6,
+  },
+  item: {
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 8,
-    gap: 10,
+    borderRadius: 14,
   },
-  iconCircle: {
+  iconWrap: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.lavender,
+    backgroundColor: "#F3F4F6",
     alignItems: "center",
     justifyContent: "center",
+    marginRight: 10,
   },
   itemLabel: {
     fontSize: 14,
@@ -177,7 +194,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   itemDesc: {
-    fontSize: 12,
+    fontSize: 11,
     color: colors.textSecondary,
     marginTop: 2,
   },

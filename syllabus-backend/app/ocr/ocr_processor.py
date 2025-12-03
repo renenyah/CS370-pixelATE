@@ -17,7 +17,7 @@ except Exception:
     dateparser = None
 
 # ---------------------------------------------------------------------------
-# Tesseract path (env override or Homebrew default)
+# Tesseract config
 # ---------------------------------------------------------------------------
 _TESS_CMD = os.getenv("TESSERACT_CMD")
 if _TESS_CMD and os.path.exists(_TESS_CMD):
@@ -31,9 +31,8 @@ os.environ.setdefault("TESSDATA_PREFIX", "/usr/share/tesseract-ocr/4.00/tessdata
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # ---------------------------------------------------------------------------
-# preprocessing
+# Image preprocessing
 # ---------------------------------------------------------------------------
-
 
 def _deskew(gray: np.ndarray) -> np.ndarray:
     _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -50,9 +49,18 @@ def _deskew(gray: np.ndarray) -> np.ndarray:
         return gray
     (h, w) = gray.shape[:2]
     M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1.0)
-    return cv2.warpAffine(
-        gray, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
-    )
+    return cv2.warpAffine(gray, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+
+def _save_preprocessed(src_path: str, pil_img: Image.Image, suffix: str) -> str:
+    try:
+        os.makedirs("preprocessed", exist_ok=True)
+        base = os.path.splitext(os.path.basename(src_path))[0]
+        out_path = os.path.join("preprocessed", f"{base}__{suffix}.png")
+        pil_img.save(out_path)
+        return out_path
+    except Exception:
+        return ""
 
 
 def preprocess_image(image_path: str, method: str = "standard") -> Tuple[Image.Image, str]:
@@ -105,21 +113,9 @@ def preprocess_image(image_path: str, method: str = "standard") -> Tuple[Image.I
     saved_path = _save_preprocessed(image_path, pil_img, suffix=method)
     return pil_img, saved_path
 
-
-def _save_preprocessed(src_path: str, pil_img: Image.Image, suffix: str) -> str:
-    try:
-        os.makedirs("preprocessed", exist_ok=True)
-        base = os.path.splitext(os.path.basename(src_path))[0]
-        out_path = os.path.join("preprocessed", f"{base}__{suffix}.png")
-        pil_img.save(out_path)
-        return out_path
-    except Exception:
-        return ""
-
 # ---------------------------------------------------------------------------
-# OCR tokens/rows
+# OCR: tokens & rows
 # ---------------------------------------------------------------------------
-
 
 def _psm_config(psm_hint: Optional[int], preprocess_method: str) -> str:
     if psm_hint is not None:
@@ -132,7 +128,9 @@ def _psm_config(psm_hint: Optional[int], preprocess_method: str) -> str:
 
 def _image_to_tokens(pil_img: Image.Image, config: str) -> List[Dict[str, Any]]:
     data = pytesseract.image_to_data(
-        pil_img, output_type=pytesseract.Output.DICT, config=config
+        pil_img,
+        output_type=pytesseract.Output.DICT,
+        config=config,
     )
     tokens: List[Dict[str, Any]] = []
     n = len(data.get("text", []))
@@ -222,8 +220,16 @@ def _rows_to_text(rows: List[List[Dict[str, Any]]]) -> str:
     return "\n".join(_rows_to_lines(rows))
 
 # ---------------------------------------------------------------------------
-# date + type helpers
+# Date + type helpers
 # ---------------------------------------------------------------------------
+
+_COURSE_REGEX = re.compile(r"\b([A-Z]{2,5}[_\-\s]?\d{2,3}(?:[_\-\s]\d{1,2})?)\b")
+
+
+def _find_course_name(text: str) -> str:
+    head = "\n".join(text.splitlines()[:10])
+    m = _COURSE_REGEX.search(head)
+    return m.group(1) if m else ""
 
 
 def _normalize_datetime(text: str) -> Tuple[str, str]:
@@ -237,22 +243,21 @@ def _normalize_datetime(text: str) -> Tuple[str, str]:
     if not text or not dateparser:
         return "", text.strip()
 
-    raw = text.strip()
-
-    has_time = bool(
-        re.search(r"\d{1,2}:\d{2}\s*(am|pm)", raw, re.I)
-        or re.search(r"\b\d{1,2}\s*(am|pm)\b", raw, re.I)
-    )
+    raw_input = text.strip()
 
     settings = {
         "RETURN_AS_TIMEZONE_AWARE": False,
         "PREFER_DAY_OF_MONTH": "first",
         "DATE_ORDER": "MDY",
     }
-    dt = dateparser.parse(raw, settings=settings)
+    dt = dateparser.parse(raw_input, settings=settings)
     if not dt:
-        return "", raw
+        return "", raw_input
 
+    has_time = bool(
+        re.search(r"\d{1,2}:\d{2}\s*(am|pm)", raw_input, re.I)
+        or re.search(r"\b\d{1,2}\s*(am|pm)\b", raw_input, re.I)
+    )
     if not has_time:
         dt = dt.replace(hour=23, minute=59, second=0, microsecond=0)
 
@@ -267,14 +272,8 @@ def _normalize_datetime(text: str) -> Tuple[str, str]:
     return iso, human
 
 
-def _normalize_date_to_iso(text: str) -> str:
-    # kept for compatibility, but we prefer _normalize_datetime
-    iso, _ = _normalize_datetime(text)
-    return iso
-
-
 def _guess_assignment_type(title: str) -> str:
-    t = title.lower()
+    t = (title or "").lower()
     if "quiz" in t:
         return "quiz"
     if any(k in t for k in ("exam", "midterm", "final", "test")):
@@ -283,17 +282,8 @@ def _guess_assignment_type(title: str) -> str:
         return "presentation"
     return "assignment"
 
-
-_COURSE_REGEX = re.compile(r"\b([A-Z]{2,5}[_\-\s]?\d{2,3}(?:[_\-\s]\d{1,2})?)\b")
-
-
-def _find_course_name(text: str) -> str:
-    head = "\n".join(text.splitlines()[:10])
-    m = _COURSE_REGEX.search(head)
-    return m.group(1) if m else ""
-
 # ---------------------------------------------------------------------------
-# regex used in fallback (your original logic)
+# Assignment extraction (Canvas-aware + fallback)
 # ---------------------------------------------------------------------------
 
 _DATE_PAT = (
@@ -304,9 +294,11 @@ _DATE_PAT = (
     r"|\b(?:Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday)\s+\d{1,2}"
     r")"
 )
+
 _ASSIGNMENT_KEYS = (
     r"(?:Due|DUE|DEADLINE|assignment|homework|quiz|exam|midterm|final|project|paper|essay|lab|task|test|assessment|presentation|reading|discussion|exercise|reflection)"
 )
+
 _ASSIGNMENT_REGEX = re.compile(
     r"([A-Za-z0-9\s()./\-:_]+?)\s*"
     + _ASSIGNMENT_KEYS
@@ -315,24 +307,16 @@ _ASSIGNMENT_REGEX = re.compile(
     flags=re.IGNORECASE,
 )
 
-# ---------------------------------------------------------------------------
-# Canvas-aware extraction (new) + fallback (old behavior)
-# ---------------------------------------------------------------------------
-
 
 def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
     """
-    Focused on Canvas "Assignments" pages.
-
-    We:
-      - build candidates where a title line is merged with its "Due ..." line
-      - strip Canvas navigation phrases from the left side
-      - default to the last token as title if a nav phrase was present
-      - normalize the date/time and classify assignment type
+    Focused on Canvas "Assignments" pages:
+    - Title is usually on one line (hw6 / Readings8 / Final Exam)
+    - 'Due ...' details are on the next line (or same line).
     """
     candidates: List[str] = []
 
-    # 1) merge title line + due line when Canvas splits them
+    # First pass: build merged candidate lines
     i = 0
     n = len(lines)
     while i < n:
@@ -340,12 +324,11 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
         low = line.lower()
 
         if "due" in low:
-            # already a due-line; treat as candidate by itself
             candidates.append(line)
             i += 1
             continue
 
-        # if next line contains 'due', merge these two
+        # If next line has "due", merge title + due line
         if i + 1 < n and "due" in lines[i + 1].lower():
             merged = line + " " + lines[i + 1]
             candidates.append(merged)
@@ -356,7 +339,6 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
     results: List[Dict[str, str]] = []
     seen: Set[Tuple[str, str]] = set()
 
-    # phrases that show up in the Canvas header/sidebar
     nav_phrases = [
         "upcoming assignments",
         "undated assignments",
@@ -372,58 +354,35 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
         low = line.lower()
         if "due" not in low:
             continue
-
-        # Find the LAST 'due', in case 'Due' appears twice on the line
-        due_idx = low.rfind("due ")
-        if due_idx == -1:
+        if any(p in low for p in nav_phrases):
             continue
 
-        left = line[:due_idx].strip(" |:-")
-        right = line[due_idx + 4 :].strip()
-
-        # Remove availability noise from LEFT ("Not available until", "Available until")
-        had_nav_phrase = False
-        left_low = left.lower()
-        for phrase in (" not available until", " available until"):
-            pos = left_low.find(phrase)
-            if pos != -1:
-                left = left[:pos].strip(" |:-,")
-                left_low = left.lower()
-
-        # Strip nav phrases INSIDE the title rather than skipping the whole line.
-        # If we saw such a phrase, we'll later assume the *last* token is the title.
-        for p in nav_phrases:
-            idx = left_low.find(p)
-            if idx != -1:
-                left = left[idx + len(p) :].strip(" |:-,")
-                left_low = left.lower()
-                had_nav_phrase = True
-
-        if not left:
+        m = re.search(r"\bDue\b", line, re.I)
+        if not m:
             continue
 
+        left = line[: m.start()].strip(" |:-")
+        right = line[m.end() :].strip()
+
+        # small fix for weird leading fragments: "le Final Exam" → "Final Exam"
         words = left.split()
-
-        # If this line had a nav phrase (like "Upcoming Assignments ... hw5"),
-        # the real title is almost always the last token -> "hw5".
-        if had_nav_phrase and words:
-            left = words[-1]
-            words = [left]
-
-        # Fix "le Final Exam" -> "Final Exam"-style noise (short leading junk)
         if len(words) > 1 and len(words[0]) <= 2 and words[1][0].isupper():
             left = " ".join(words[1:])
-            words = left.split()
 
-        # Drop trailing tokens with no letters (e.g., "Readings8 5" -> "Readings8",
-        # or stray "/100", "75", etc.)
-        while words and not re.search(r"[A-Za-z]", words[-1]):
-            words.pop()
-        left = " ".join(words).strip(" |:-,")
+        # Strip 'available until' noise on the left if present
+        ll = left.lower()
+        for phrase in (" not available until", " available until"):
+            pos = ll.find(phrase)
+            if pos != -1:
+                left = left[:pos].strip(" |:-,")
+                ll = left.lower()
+
         if not left or len(left) < 2:
             continue
+        if left.lower() in ("upcoming assignments", "undated assignments", "past assignments"):
+            continue
 
-        # Now clean the date text on the RIGHT side
+        # trim at first '|' on right side
         pipe = right.find("|")
         if pipe != -1:
             right = right[:pipe]
@@ -452,21 +411,20 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
     return results
 
 
-
 def extract_assignments_and_dates(full_text: str) -> List[Dict[str, str]]:
     """
-    Main logical extractor:
-      1) Canvas-aware line/merged-line pass (preferred).
-      2) If that finds nothing, fall back to your original regex behavior.
+    Main OCR text -> assignments extractor.
+    1) Try Canvas-style parsing first (for Canvas assignments page screenshots).
+    2) If nothing found, fall back to regex + 'due' line scans.
     """
     if not full_text:
         return []
 
-    results: List[Dict[str, str]] = []
-    seen: Set[Tuple[str, str]] = set()
-
     lines = [" ".join(ln.split()) for ln in full_text.splitlines()]
     lines = [ln for ln in lines if ln]
+
+    results: List[Dict[str, str]] = []
+    seen: Set[Tuple[str, str]] = set()
 
     # ---- Pass 1: Canvas-aware ----
     canvas_items = _extract_assignments_canvas_style(lines)
@@ -477,9 +435,33 @@ def extract_assignments_and_dates(full_text: str) -> List[Dict[str, str]]:
         seen.add(key)
         results.append(it)
 
-    # ---- Pass 2: original regex per line (only if nothing found) ----
+    # ---- Pass 2: regex on each line (similar to your original logic) ----
     if not results:
         for ln in lines:
+            # direct 'due' scanning
+            if re.search(r"\bdue\b", ln, re.I):
+                dm = re.search(_DATE_PAT, ln, re.I)
+                if dm:
+                    date_raw_text = dm.group(1).strip()
+                    left = ln[: dm.start()].strip()
+                    left = re.sub(r"\b(due|by)\b.*$", "", left, flags=re.I).strip(": -|")
+                    if left:
+                        iso, human = _normalize_datetime(date_raw_text)
+                        if not human:
+                            human = date_raw_text
+                        key = (left.lower(), iso or human)
+                        if key not in seen:
+                            seen.add(key)
+                            results.append(
+                                {
+                                    "title": left[:300],
+                                    "due_date_raw": human,
+                                    "due_date_iso": iso,
+                                    "assignment_type": _guess_assignment_type(left),
+                                }
+                            )
+
+            # more generic regex fallback
             for m in _ASSIGNMENT_REGEX.findall(ln):
                 title = " ".join(m[0].split())[:300]
                 date_raw_text = m[-1].strip()
@@ -499,41 +481,11 @@ def extract_assignments_and_dates(full_text: str) -> List[Dict[str, str]]:
                     }
                 )
 
-    # ---- Pass 3: simple "line contains 'due'" fallback (your old fallback) ----
-    if not results:
-        for ln in lines:
-            if not re.search(r"\bdue\b", ln, re.I):
-                continue
-            dm = re.search(_DATE_PAT, ln, re.I)
-            if not dm:
-                continue
-            date_raw_text = dm.group(1).strip()
-            left = ln[: dm.start()].strip()
-            left = re.sub(r"\b(due|by)\b.*$", "", left, flags=re.I).strip(": -")
-            if not left:
-                continue
-            iso, human = _normalize_datetime(date_raw_text)
-            if not human:
-                human = date_raw_text
-            key = (left.lower(), iso or human)
-            if key in seen:
-                continue
-            seen.add(key)
-            results.append(
-                {
-                    "title": left[:300],
-                    "due_date_raw": human,
-                    "due_date_iso": iso,
-                    "assignment_type": _guess_assignment_type(left),
-                }
-            )
-
     return results
 
 # ---------------------------------------------------------------------------
-# public API
+# Public API
 # ---------------------------------------------------------------------------
-
 
 def ocr_extract_assignments(
     image_path: str,
@@ -555,6 +507,7 @@ def ocr_extract_assignments(
             "title": it["title"],
             "due_date_raw": it.get("due_date_raw", ""),
             "due_date_iso": it.get("due_date_iso", ""),
+            # 🔑 keep your requested logic:
             "assignment_type": it.get("assignment_type", "assignment"),
             "course": course,
             "page": 1,
@@ -582,6 +535,7 @@ def debug_ocr_image(
         "preprocessed_saved": saved_path or "",
         "token_count": len(tokens),
         "row_count": len(rows),
+        "first_tokens": tokens[:25],
         "first_rows": [" ".join(t["text"] for t in r) for r in rows[:10]],
         "first_text": "\n".join(text.splitlines()[:20]),
         "items_preview": items,

@@ -1,8 +1,5 @@
 // components/AddAssignmentModal.tsx
-import React, {
-  useState,
-  useCallback,
-} from "react";
+import React, { useMemo, useState } from "react";
 import {
   Modal,
   View,
@@ -12,194 +9,279 @@ import {
   TextInput,
   ScrollView,
   Alert,
+  Platform,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import {
-  X,
-  Image as ImageIcon,
-  Plus as PlusIcon,
-  Trash2,
-} from "lucide-react-native";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import { X, Image as ImageIcon, Trash2 } from "lucide-react-native";
 
 import {
-  Draft,
-  safeISO,
   useAssignments,
+  Draft,
+  AssignmentType,
+  safeISO,
 } from "./AssignmentsContext";
-import { API_BASE } from "../constant/api";
 import { colors } from "../constant/colors";
+import { API_BASE } from "../constant/api";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
+  initialCourse?: string;
 };
 
-type OcrItem = {
+type DueItem = {
   title: string;
   due_date_raw?: string;
   due_date_iso?: string;
   assignment_type?: string;
-  course?: string;
   page?: number | null;
+  course?: string;
   source?: string;
 };
 
+type ApiResponse = {
+  status?: "ok" | "error";
+  message?: string;
+  items?: DueItem[];
+};
+
+const TYPE_OPTIONS: AssignmentType[] = [
+  "Assignment",
+  "Quiz",
+  "Test",
+  "Project",
+  "Discussion",
+  "Reading",
+  "Art",
+  "Other",
+];
+
 function nextDraftId(): string {
-  return `da_${Math.random().toString(36).slice(2, 10)}`;
+  return `d_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export default function AddAssignmentModal({
   visible,
   onClose,
+  initialCourse,
 }: Props) {
-  const { addAssignmentsFromDrafts } =
-    useAssignments();
+  const { addAssignmentsFromDrafts } = useAssignments();
 
-  const [courseName, setCourseName] = useState("");
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  // Manual single-assignment form
+  const [title, setTitle] = useState("");
+  const [course, setCourse] = useState(initialCourse || "");
+  const [description, setDescription] = useState("");
+  const [type, setType] = useState<AssignmentType>("Assignment");
+
+  // Date & time state (with default 11:59 pm)
+  const defaultDate = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+
+  const defaultTime = useMemo(() => {
+    const t = new Date();
+    t.setHours(23, 59, 0, 0);
+    return t;
+  }, []);
+
+  const [date, setDate] = useState<Date>(defaultDate);
+  const [time, setTime] = useState<Date>(defaultTime);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // Extracted from image
   const [parsing, setParsing] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+
+  const hasExtractedDrafts = drafts.length > 0;
+
+  const resetForm = () => {
+    setTitle("");
+    setCourse(initialCourse || "");
+    setDescription("");
+    setType("Assignment");
+    setDate(defaultDate);
+    setTime(defaultTime);
+    setDrafts([]);
+  };
 
   const closeAll = () => {
-    setCourseName("");
-    setDrafts([]);
+    resetForm();
     onClose();
   };
 
-  const makeDraftsFromItems = (
-    items: OcrItem[]
-  ) => {
-    if (!items?.length) {
-      Alert.alert(
-        "No assignments found",
-        "The extractor didn’t find any assignments in this image."
-      );
+  const handleBackendError = (msg?: string) => {
+    Alert.alert("Upload failed", msg || "Server error");
+  };
+
+  const combineDateTimeToString = (d: Date, t: Date): string => {
+    // Make a local Date that uses d's Y/M/D and t's H/M
+    const combined = new Date(
+      d.getFullYear(),
+      d.getMonth(),
+      d.getDate(),
+      t.getHours(),
+      t.getMinutes(),
+      0,
+      0
+    );
+    // Store as human-ish string that safeISO can still parse
+    // e.g. "11/21/2025 23:59"
+    const mm = (combined.getMonth() + 1).toString().padStart(2, "0");
+    const dd = combined.getDate().toString().padStart(2, "0");
+    const yyyy = combined.getFullYear();
+    const hh = combined.getHours().toString().padStart(2, "0");
+    const min = combined.getMinutes().toString().padStart(2, "0");
+    return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
+  };
+
+  const handleSaveManual = () => {
+    const trimmedTitle = title.trim();
+    const trimmedCourse = course.trim();
+    if (!trimmedTitle) {
+      Alert.alert("Missing title", "Please enter an assignment name.");
       return;
     }
 
-    const ds: Draft[] = items.map((it) => ({
+    const dateTimeString = combineDateTimeToString(date, time);
+    const iso = safeISO(dateTimeString);
+
+    const draft: Draft = {
+      id: nextDraftId(),
+      title: trimmedTitle,
+      course: trimmedCourse || "Untitled Course",
+      type,
+      dueISO: iso,
+      description: description.trim() || "",
+    };
+
+    addAssignmentsFromDrafts([draft]);
+    closeAll();
+  };
+
+  const makeDraftsFromItems = (items: DueItem[]) => {
+    const ds: Draft[] = (items || []).map((it) => ({
       id: nextDraftId(),
       title: it.title || "Untitled",
-      course: courseName || it.course || "",
-      type: "Assignment", // You can remap from assignment_type if you like
+      course: it.course || course || "Untitled Course",
+      type:
+        (it.assignment_type &&
+          (capitalizeType(it.assignment_type) as AssignmentType)) ||
+        "Assignment",
       dueISO: safeISO(
         it.due_date_iso || it.due_date_raw || null
       ),
       description: "",
     }));
 
+    if (!ds.length) {
+      Alert.alert(
+        "No assignments found",
+        "The extractor didn't find any assignments in this image."
+      );
+      return;
+    }
+
     setDrafts(ds);
   };
 
-  const handleUploadImage = useCallback(
-    async () => {
-      const res =
-        await ImagePicker.launchImageLibraryAsync({
-          mediaTypes:
-            ImagePicker.MediaTypeOptions.Images,
-          allowsEditing: false,
-          quality: 1,
-        });
+  const capitalizeType = (raw: string): string => {
+    const lower = raw.toLowerCase();
+    if (lower.includes("quiz")) return "Quiz";
+    if (lower.includes("test") || lower.includes("exam"))
+      return "Test";
+    if (lower.includes("presentation")) return "Project"; // closest type
+    if (lower.includes("project")) return "Project";
+    return "Assignment";
+  };
 
-      if (res.canceled || !res.assets?.[0]) return;
+  // ------------ IMAGE / OCR ------------
+  const handlePickImage = async () => {
+    const res =
+      await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 1,
+      });
 
-      const asset = res.assets[0] as any;
-      setParsing(true);
-      try {
-        const fd = new FormData();
-        fd.append(
-          "file",
-          {
-            uri: asset.uri,
-            name:
-              asset.fileName ||
-              `image_${Date.now()}.jpg`,
-            type: asset.type || "image/jpeg",
-          } as any
-        );
+    if (res.canceled || !res.assets?.[0]) return;
 
-        const base =
-          API_BASE.replace(/\/$/, "");
-        const url = `${base}/assignments/image?preprocess=${encodeURIComponent(
-          "screenshot"
-        )}&use_llm=false`;
-        console.log("ADD IMAGE →", url);
+    const asset = res.assets[0] as any;
+    setParsing(true);
+    try {
+      const fd = new FormData();
+      fd.append(
+        "file",
+        {
+          uri: asset.uri,
+          name:
+            asset.fileName ||
+            `image_${Date.now()}.jpg`,
+          type: asset.type || "image/jpeg",
+        } as any
+      );
 
-        const resp = await fetch(url, {
-          method: "POST",
-          body: fd,
-        });
+      const base = API_BASE.replace(/\/$/, "");
+      const url = `${base}/assignments/image?preprocess=${encodeURIComponent(
+        "screenshot"
+      )}&use_llm=true`;
+      console.log("IMAGE (AddAssignmentModal) →", url);
 
-        if (!resp.ok) {
-          console.log(
-            "Add image resp not ok:",
-            resp.status,
-            resp.statusText
-          );
-          Alert.alert(
-            "Upload failed",
-            `HTTP ${resp.status} – ${resp.statusText}`
-          );
-          return;
-        }
+      const resp = await fetch(url, {
+        method: "POST",
+        body: fd,
+      });
 
-        let json: any;
-        try {
-          json = await resp.json();
-        } catch (e: any) {
-          console.log(
-            "Add image JSON error:",
-            e
-          );
-          Alert.alert(
-            "Error",
-            "Could not read server response."
-          );
-          return;
-        }
-
+      if (!resp.ok) {
         console.log(
-          "ADD IMAGE resp →",
-          JSON.stringify(json)
+          "Image resp not ok:",
+          resp.status,
+          resp.statusText
         );
-
-        const items: OcrItem[] = Array.isArray(
-          json?.items
-        )
-          ? json.items
-          : [];
-
-        makeDraftsFromItems(items);
-      } catch (e: any) {
-        console.log("Add image error:", e);
-        Alert.alert(
-          "Error",
-          String(e?.message || e)
+        return handleBackendError(
+          `HTTP ${resp.status} – ${resp.statusText}`
         );
-      } finally {
-        setParsing(false);
       }
-    },
-    [courseName]
-  );
 
-  const handleAddRow = () => {
-    setDrafts((prev) => [
-      ...prev,
-      {
-        id: nextDraftId(),
-        title: "",
-        course: courseName,
-        type: "Assignment",
-        dueISO: null,
-        description: "",
-      },
-    ]);
+      let json: ApiResponse | any;
+      try {
+        json = (await resp.json()) as ApiResponse;
+      } catch (e: any) {
+        console.log("Image JSON parse error:", e);
+        return handleBackendError(
+          "Could not parse server response."
+        );
+      }
+
+      console.log(
+        "Image resp (AddAssignmentModal) →",
+        JSON.stringify(json)
+      );
+
+      const items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json)
+        ? json
+        : [];
+
+      makeDraftsFromItems(items);
+    } catch (e: any) {
+      console.log("Image parse error:", e);
+      Alert.alert("Error", String(e?.message || e));
+    } finally {
+      setParsing(false);
+    }
   };
 
   const updateDraft = (
     id: string,
     field: keyof Draft,
-    value: string | null
+    value: string
   ) => {
     setDrafts((prev) =>
       prev.map((d) =>
@@ -209,26 +291,41 @@ export default function AddAssignmentModal({
   };
 
   const deleteDraft = (id: string) => {
-    setDrafts((prev) =>
-      prev.filter((d) => d.id !== id)
-    );
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const handleSave = () => {
+  const handleSaveExtracted = () => {
     if (!drafts.length) {
-      closeAll();
+      Alert.alert("Nothing to save", "No extracted assignments.");
       return;
     }
-
     const cleaned = drafts.map((d) => ({
       ...d,
-      course: d.course || courseName,
       dueISO: safeISO(d.dueISO || null),
     }));
-
     addAssignmentsFromDrafts(cleaned);
     closeAll();
   };
+
+  const formattedDate = useMemo(
+    () =>
+      date.toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      }),
+    [date]
+  );
+
+  const formattedTime = useMemo(
+    () =>
+      time.toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }),
+    [time]
+  );
 
   return (
     <Modal
@@ -239,219 +336,312 @@ export default function AddAssignmentModal({
     >
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          {/* Header */}
           <View style={styles.headerRow}>
             <Text style={styles.title}>
-              Add assignment(s)
+              Add Assignment
             </Text>
-            <TouchableOpacity
-              onPress={closeAll}
-            >
-              <X
-                size={22}
-                color={colors.textPrimary}
-              />
+            <TouchableOpacity onPress={closeAll}>
+              <X size={22} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.sub}>
-            Upload an image of your assignment
-            list or add rows manually, then
-            save them to your schedule.
-          </Text>
+          <ScrollView
+            style={{ maxHeight: 500 }}
+            contentContainerStyle={{
+              paddingBottom: 16,
+            }}
+          >
+            {/* Manual form */}
+            <Text style={styles.label}>Title</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., Homework 3 – Dynamic Programming"
+              placeholderTextColor={
+                colors.textSecondary + "99"
+              }
+              value={title}
+              onChangeText={setTitle}
+            />
 
-          {/* Class name */}
-          <Text style={styles.label}>
-            Class name
-          </Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g., CS 326 – Software Dev"
-            placeholderTextColor={
-              colors.textSecondary + "99"
-            }
-            value={courseName}
-            onChangeText={setCourseName}
-          />
+            <Text style={styles.label}>Class</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., CS 370 – Algorithms"
+              placeholderTextColor={
+                colors.textSecondary + "99"
+              }
+              value={course}
+              onChangeText={setCourse}
+            />
 
-          {/* Actions row: upload + add manual row */}
-          <View style={styles.rowButtons}>
+            <Text style={styles.label}>
+              Assignment type
+            </Text>
+            <View style={styles.typeRow}>
+              {TYPE_OPTIONS.map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[
+                    styles.typeChip,
+                    type === t && styles.typeChipActive,
+                  ]}
+                  onPress={() => setType(t)}
+                >
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      type === t &&
+                        styles.typeChipTextActive,
+                    ]}
+                  >
+                    {t}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={styles.row}>
+              <View style={{ flex: 1, marginRight: 6 }}>
+                <Text style={styles.label}>
+                  Due date
+                </Text>
+                <TouchableOpacity
+                  style={styles.pickerButton}
+                  onPress={() =>
+                    setShowDatePicker(true)
+                  }
+                >
+                  <Text style={styles.pickerButtonText}>
+                    {formattedDate}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <View style={{ flex: 1, marginLeft: 6 }}>
+                <Text style={styles.label}>
+                  Due time
+                </Text>
+                <TouchableOpacity
+                  style={styles.pickerButton}
+                  onPress={() =>
+                    setShowTimePicker(true)
+                  }
+                >
+                  <Text style={styles.pickerButtonText}>
+                    {formattedTime}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {showDatePicker && (
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display={
+                  Platform.OS === "ios"
+                    ? "spinner"
+                    : "default"
+                }
+                onChange={(
+                  _event: DateTimePickerEvent,
+                  selected?: Date
+                ) => {
+                  if (Platform.OS !== "ios") {
+                    setShowDatePicker(false);
+                  }
+                  if (!selected) return;
+                  setDate(selected);
+                }}
+              />
+            )}
+
+            {showTimePicker && (
+              <DateTimePicker
+                value={time}
+                mode="time"
+                display={
+                  Platform.OS === "ios"
+                    ? "spinner"
+                    : "default"
+                }
+                onChange={(
+                  _event: DateTimePickerEvent,
+                  selected?: Date
+                ) => {
+                  if (Platform.OS !== "ios") {
+                    setShowTimePicker(false);
+                  }
+                  if (!selected) return;
+                  setTime(selected);
+                }}
+              />
+            )}
+
+            <Text style={styles.label}>
+              Description (optional)
+            </Text>
+            <TextInput
+              style={[styles.input, { height: 80 }]}
+              placeholder="Notes or details…"
+              placeholderTextColor={
+                colors.textSecondary + "99"
+              }
+              multiline
+              textAlignVertical="top"
+              value={description}
+              onChangeText={setDescription}
+            />
+
+            {/* Divider */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>
+                or upload an image
+              </Text>
+              <View style={styles.dividerLine} />
+            </View>
+
             <TouchableOpacity
               style={styles.fileBtn}
-              onPress={handleUploadImage}
+              onPress={handlePickImage}
               disabled={parsing}
             >
               <ImageIcon
                 size={18}
                 color={colors.textPrimary}
               />
-              <Text
-                style={styles.fileBtnText}
-              >
+              <Text style={styles.fileBtnText}>
                 {parsing
                   ? "Parsing…"
-                  : "Upload image"}
+                  : "Upload screenshot / photo"}
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.fileBtn}
-              onPress={handleAddRow}
-              disabled={parsing}
-            >
-              <PlusIcon
-                size={18}
-                color={colors.textPrimary}
-              />
-              <Text
-                style={styles.fileBtnText}
-              >
-                Add row
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Draft list */}
-          <ScrollView
-            style={{ maxHeight: 320 }}
-            contentContainerStyle={{
-              paddingBottom: 8,
-            }}
-          >
-            {drafts.map((d) => (
-              <View
-                key={d.id}
-                style={styles.card}
-              >
-                <View
-                  style={styles.cardHeader}
-                >
-                  <Text
-                    style={styles.cardLabel}
+            {hasExtractedDrafts && (
+              <View style={{ marginTop: 16 }}>
+                <Text style={styles.label}>
+                  Extracted assignments
+                </Text>
+                {drafts.map((d) => (
+                  <View
+                    key={d.id}
+                    style={styles.card}
                   >
-                    Assignment title
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() =>
-                      deleteDraft(d.id)
-                    }
-                  >
-                    <Trash2
-                      size={18}
-                      color={
-                        colors.textSecondary
+                    <View
+                      style={styles.cardHeader}
+                    >
+                      <Text
+                        style={styles.cardLabel}
+                      >
+                        Title
+                      </Text>
+                      <TouchableOpacity
+                        onPress={() =>
+                          deleteDraft(d.id)
+                        }
+                      >
+                        <Trash2
+                          size={18}
+                          color={
+                            colors.textSecondary
+                          }
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      value={d.title}
+                      onChangeText={(txt) =>
+                        updateDraft(
+                          d.id,
+                          "title",
+                          txt
+                        )
+                      }
+                      placeholder="Assignment title"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
                       }
                     />
-                  </TouchableOpacity>
-                </View>
 
-                <TextInput
-                  style={styles.input}
-                  value={d.title}
-                  onChangeText={(t) =>
-                    updateDraft(
-                      d.id,
-                      "title",
-                      t
-                    )
-                  }
-                  placeholder="Homework 5, Project draft, Quiz 2..."
-                  placeholderTextColor={
-                    colors.textSecondary +
-                    "99"
-                  }
-                />
+                    <Text
+                      style={styles.cardLabel}
+                    >
+                      Class
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={d.course}
+                      onChangeText={(txt) =>
+                        updateDraft(
+                          d.id,
+                          "course",
+                          txt
+                        )
+                      }
+                      placeholder="e.g., CS 370"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
 
-                <Text
-                  style={styles.cardLabel}
-                >
-                  Class name
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={d.course}
-                  onChangeText={(t) =>
-                    updateDraft(
-                      d.id,
-                      "course",
-                      t
-                    )
-                  }
-                  placeholder="e.g., CS 326"
-                  placeholderTextColor={
-                    colors.textSecondary +
-                    "99"
-                  }
-                />
+                    <Text
+                      style={styles.cardLabel}
+                    >
+                      Due date (YYYY-MM-DD)
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={d.dueISO || ""}
+                      onChangeText={(txt) =>
+                        updateDraft(
+                          d.id,
+                          "dueISO",
+                          txt
+                        )
+                      }
+                      placeholder="2025-02-03"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
 
-                <Text
-                  style={styles.cardLabel}
-                >
-                  Due date (YYYY-MM-DD or
-                  MM/DD/YYYY)
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={d.dueISO || ""}
-                  onChangeText={(t) =>
-                    updateDraft(
-                      d.id,
-                      "dueISO",
-                      t
-                    )
-                  }
-                  placeholder="2025-12-01 or 12/01/2025"
-                  placeholderTextColor={
-                    colors.textSecondary +
-                    "99"
-                  }
-                />
-
-                <Text
-                  style={styles.cardLabel}
-                >
-                  Notes (optional)
-                </Text>
-                <TextInput
-                  style={[
-                    styles.input,
-                    { height: 70 },
-                  ]}
-                  multiline
-                  textAlignVertical="top"
-                  value={d.description || ""}
-                  onChangeText={(t) =>
-                    updateDraft(
-                      d.id,
-                      "description",
-                      t
-                    )
-                  }
-                  placeholder="Any extra details…"
-                  placeholderTextColor={
-                    colors.textSecondary +
-                    "99"
-                  }
-                />
+                    <Text
+                      style={styles.cardLabel}
+                    >
+                      Description (optional)
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        { height: 70 },
+                      ]}
+                      value={d.description || ""}
+                      onChangeText={(txt) =>
+                        updateDraft(
+                          d.id,
+                          "description",
+                          txt
+                        )
+                      }
+                      placeholder="Notes…"
+                      multiline
+                      textAlignVertical="top"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
+                  </View>
+                ))}
               </View>
-            ))}
-
-            {drafts.length === 0 && (
-              <Text
-                style={{
-                  color:
-                    colors.textSecondary,
-                  marginTop: 10,
-                }}
-              >
-                No assignments yet. Upload an
-                image or tap “Add row” to get
-                started.
-              </Text>
             )}
           </ScrollView>
 
-          {/* Footer buttons */}
+          {/* Actions */}
           <View style={styles.actionsRow}>
             <TouchableOpacity
               style={[
@@ -471,13 +661,17 @@ export default function AddAssignmentModal({
                 styles.actionBtn,
                 styles.primaryBtn,
               ]}
-              onPress={handleSave}
+              onPress={
+                hasExtractedDrafts
+                  ? handleSaveExtracted
+                  : handleSaveManual
+              }
               disabled={parsing}
             >
-              <Text
-                style={styles.primaryText}
-              >
-                Save assignments
+              <Text style={styles.primaryText}>
+                {hasExtractedDrafts
+                  ? "Save extracted"
+                  : "Save assignment"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -512,15 +706,10 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: colors.textPrimary,
   },
-  sub: {
-    color: colors.textSecondary,
-    marginTop: 6,
-    marginBottom: 10,
-  },
   label: {
     color: colors.textSecondary,
     fontWeight: "700",
-    marginTop: 8,
+    marginTop: 10,
     marginBottom: 6,
   },
   input: {
@@ -533,14 +722,62 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 4,
   },
-  rowButtons: {
+  row: {
     flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
+    alignItems: "flex-start",
+    marginTop: 4,
+  },
+  typeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  typeChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.chipBackground,
+  },
+  typeChipActive: {
+    backgroundColor: colors.chipActiveBackground,
+  },
+  typeChipText: {
+    color: colors.chipText,
+    fontWeight: "600",
+    fontSize: 12,
+  },
+  typeChipTextActive: {
+    color: colors.chipTextActive,
+  },
+  pickerButton: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  pickerButtonText: {
+    color: colors.textPrimary,
+    fontWeight: "600",
+  },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 14,
     marginBottom: 10,
   },
-  fileBtn: {
+  dividerLine: {
     flex: 1,
+    height: 1,
+    backgroundColor: "#E5E7EB",
+  },
+  dividerText: {
+    marginHorizontal: 8,
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+  fileBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
@@ -552,27 +789,6 @@ const styles = StyleSheet.create({
   fileBtnText: {
     fontWeight: "700",
     color: colors.textPrimary,
-  },
-  card: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: "#F9FAFB",
-  },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  cardLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: colors.textSecondary,
-    marginTop: 4,
-    marginBottom: 4,
   },
   actionsRow: {
     flexDirection: "row",
@@ -600,5 +816,26 @@ const styles = StyleSheet.create({
   primaryText: {
     color: "#fff",
     fontWeight: "800",
+  },
+  card: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: "#F9FAFB",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  cardLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    marginTop: 4,
+    marginBottom: 4,
   },
 });

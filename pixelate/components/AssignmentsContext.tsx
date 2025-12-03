@@ -17,6 +17,7 @@ export type AssignmentType =
   | "Quiz"
   | "Test"
   | "Project"
+  | "Presentation" // 👈 added this
   | "Other";
 
 export type Assignment = {

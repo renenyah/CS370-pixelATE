@@ -324,8 +324,11 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
     """
     Focused on Canvas "Assignments" pages.
 
-    We first build "candidate" lines where the title might be on one line
-    and the 'Due ...' on the next, then parse each candidate line.
+    We:
+      - build candidates where a title line is merged with its "Due ..." line
+      - strip Canvas navigation phrases from the left side
+      - default to the last token as title if a nav phrase was present
+      - normalize the date/time and classify assignment type
     """
     candidates: List[str] = []
 
@@ -335,7 +338,9 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
     while i < n:
         line = lines[i]
         low = line.lower()
+
         if "due" in low:
+            # already a due-line; treat as candidate by itself
             candidates.append(line)
             i += 1
             continue
@@ -351,6 +356,7 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
     results: List[Dict[str, str]] = []
     seen: Set[Tuple[str, str]] = set()
 
+    # phrases that show up in the Canvas header/sidebar
     nav_phrases = [
         "upcoming assignments",
         "undated assignments",
@@ -366,9 +372,8 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
         low = line.lower()
         if "due" not in low:
             continue
-        if any(p in low for p in nav_phrases):
-            continue
 
+        # Find the LAST 'due', in case 'Due' appears twice on the line
         due_idx = low.rfind("due ")
         if due_idx == -1:
             continue
@@ -376,27 +381,49 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
         left = line[:due_idx].strip(" |:-")
         right = line[due_idx + 4 :].strip()
 
-        # strip 'available until / not available until' noise
-        ll = left.lower()
+        # Remove availability noise from LEFT ("Not available until", "Available until")
+        had_nav_phrase = False
+        left_low = left.lower()
         for phrase in (" not available until", " available until"):
-            pos = ll.find(phrase)
+            pos = left_low.find(phrase)
             if pos != -1:
                 left = left[:pos].strip(" |:-,")
-                ll = left.lower()
+                left_low = left.lower()
 
+        # Strip nav phrases INSIDE the title rather than skipping the whole line.
+        # If we saw such a phrase, we'll later assume the *last* token is the title.
+        for p in nav_phrases:
+            idx = left_low.find(p)
+            if idx != -1:
+                left = left[idx + len(p) :].strip(" |:-,")
+                left_low = left.lower()
+                had_nav_phrase = True
+
+        if not left:
+            continue
+
+        words = left.split()
+
+        # If this line had a nav phrase (like "Upcoming Assignments ... hw5"),
+        # the real title is almost always the last token -> "hw5".
+        if had_nav_phrase and words:
+            left = words[-1]
+            words = [left]
+
+        # Fix "le Final Exam" -> "Final Exam"-style noise (short leading junk)
+        if len(words) > 1 and len(words[0]) <= 2 and words[1][0].isupper():
+            left = " ".join(words[1:])
+            words = left.split()
+
+        # Drop trailing tokens with no letters (e.g., "Readings8 5" -> "Readings8",
+        # or stray "/100", "75", etc.)
+        while words and not re.search(r"[A-Za-z]", words[-1]):
+            words.pop()
+        left = " ".join(words).strip(" |:-,")
         if not left or len(left) < 2:
             continue
 
-        # skip pure headers
-        if left.lower() in ("upcoming assignments", "undated assignments", "past assignments"):
-            continue
-
-        # small fix for 'le Final Exam' → 'Final Exam'
-        words = left.split()
-        if len(words) > 1 and len(words[0]) <= 2 and words[1][0].isupper():
-            left = " ".join(words[1:])
-
-        # trim date tail at first '|'
+        # Now clean the date text on the RIGHT side
         pipe = right.find("|")
         if pipe != -1:
             right = right[:pipe]
@@ -423,6 +450,7 @@ def _extract_assignments_canvas_style(lines: List[str]) -> List[Dict[str, str]]:
         )
 
     return results
+
 
 
 def extract_assignments_and_dates(full_text: str) -> List[Dict[str, str]]:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 import os
 from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime
 
 # PDF text extraction
 try:
@@ -136,9 +135,6 @@ def _normalize_calendar_spacing(text: str) -> str:
 
 
 def _norm_date_to_iso(text: str, fallback_year: Optional[int]) -> str:
-    """
-    Parse a date token into YYYY-MM-DD (no time).
-    """
     if not text or not dateparser:
         return ""
     text = text.replace(".", "")  # "Jan." -> "Jan"
@@ -194,92 +190,23 @@ def _unique(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return out
 
 
-# -------------------------
-# Category + time + display date helpers
-# -------------------------
-
-def _iso_to_mdy(iso_str: str) -> str:
+def _guess_assignment_type(title: str) -> str:
     """
-    Convert 'YYYY-MM-DD' or 'YYYY-MM-DDTHH:MM:SS' to 'MM/DD/YYYY'.
-    """
-    try:
-        if not iso_str:
-            return ""
-        date_part = iso_str.split("T")[0]
-        dt = datetime.fromisoformat(date_part)
-        return dt.strftime("%m/%d/%Y")
-    except Exception:
-        return ""
+    Classify an assignment based on its title.
 
-
-def _detect_category(title: str) -> str:
-    """
-    Classify assignment type from title:
-      - 'quiz'
-      - 'test' (covers exam, midterm, test)
-      - 'presentation'
-      - 'assignment' (default)
+    - 'quiz' if it mentions 'quiz'
+    - 'test' if it mentions 'exam', 'midterm', 'final', or 'test'
+    - 'presentation' if it mentions 'presentation', 'talk', 'pitch', or 'poster'
+    - otherwise 'assignment'
     """
     t = (title or "").lower()
     if "quiz" in t:
         return "quiz"
-    if any(word in t for word in ("exam", "midterm", "test")):
+    if any(k in t for k in ("exam", "midterm", "final", "test")):
         return "test"
-    if "presentation" in t or "present" in t:
+    if any(k in t for k in ("presentation", "talk", "pitch", "poster")):
         return "presentation"
     return "assignment"
-
-
-def _attach_category_and_time(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    For each item, add:
-      - category: 'quiz' | 'test' | 'presentation' | 'assignment'
-      - due_time: default '23:59' (11:59pm) unless already provided
-      - due_date_mdy: 'MM/DD/YYYY' based on due_date_iso
-      - due_datetime_iso: 'YYYY-MM-DDT23:59:00' (or using existing time if later)
-    """
-    out: List[Dict[str, Any]] = []
-    for it in items or []:
-        new_it = dict(it)
-
-        title = new_it.get("title", "")
-        iso = (new_it.get("due_date_iso") or "").strip()
-
-        # Category
-        new_it["category"] = new_it.get("category") or _detect_category(title)
-
-        # Date in MM/DD/YYYY for display
-        if iso:
-            new_it["due_date_mdy"] = new_it.get("due_date_mdy") or _iso_to_mdy(iso)
-        else:
-            new_it.setdefault("due_date_mdy", "")
-
-        # Default due time (11:59pm) unless something is already set
-        due_time = (new_it.get("due_time") or "").strip()
-        if not due_time:
-            # simple "HH:MM" 24h string
-            due_time = "23:59"
-        new_it["due_time"] = due_time
-
-        # Build datetime ISO string from date + time
-        if iso:
-            date_part = iso.split("T")[0]
-            # if iso already had time, we still override with default for consistency;
-            # you can change this if you later parse explicit times.
-            new_it["due_datetime_iso"] = f"{date_part}T{due_time}:00"
-        else:
-            new_it.setdefault("due_datetime_iso", "")
-
-        out.append(new_it)
-    return out
-
-
-def annotate_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Public helper so other modules (like app.app after LLM repair) can
-    attach category + time + display date fields to arbitrary item lists.
-    """
-    return _attach_category_and_time(items or [])
 
 
 # -------------------------
@@ -296,7 +223,14 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
         date_raw = _clean(m.group("date"))
         iso = _norm_date_to_iso(date_raw, fallback_year)
         if iso:
-            results.append({"title": title, "due_date_raw": date_raw, "due_date_iso": iso})
+            results.append(
+                {
+                    "title": title,
+                    "due_date_raw": date_raw,
+                    "due_date_iso": iso,
+                    "assignment_type": _guess_assignment_type(title),
+                }
+            )
 
     # Pass B: schedule rows beginning with a month-name date
     for ln in text.splitlines():
@@ -323,7 +257,14 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
                     continue
             iso = _norm_date_to_iso(date_raw, fallback_year)
             if iso:
-                results.append({"title": p, "due_date_raw": date_raw, "due_date_iso": iso})
+                results.append(
+                    {
+                        "title": p,
+                        "due_date_raw": date_raw,
+                        "due_date_iso": iso,
+                        "assignment_type": _guess_assignment_type(p),
+                    }
+                )
 
     # Pass B2: lines that begin with a numeric date (e.g., "9/12 Educational Reflection Due")
     for ln in text.splitlines():
@@ -336,7 +277,12 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
         iso = _norm_date_to_iso(date_raw, fallback_year)
         if iso or date_raw:
             results.append(
-                {"title": title, "due_date_raw": date_raw, "due_date_iso": iso}
+                {
+                    "title": title,
+                    "due_date_raw": date_raw,
+                    "due_date_iso": iso,
+                    "assignment_type": _guess_assignment_type(title),
+                }
             )
 
     # Pass C: “... due ... on <date>”
@@ -347,7 +293,14 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
         date_raw = _clean(m.group("date"))
         iso = _norm_date_to_iso(date_raw, fallback_year)
         if iso:
-            results.append({"title": title, "due_date_raw": date_raw, "due_date_iso": iso})
+            results.append(
+                {
+                    "title": title,
+                    "due_date_raw": date_raw,
+                    "due_date_iso": iso,
+                    "assignment_type": _guess_assignment_type(title),
+                }
+            )
 
     # Pass D: Rome “Week … (Mon Jan. 27) … Assignment N: ...”
     current_week_date: Optional[str] = None
@@ -368,10 +321,11 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
                             "title": title,
                             "due_date_raw": current_week_date,
                             "due_date_iso": iso,
+                            "assignment_type": _guess_assignment_type(title),
                         }
                     )
 
-    # Pass E: “... due by Tuesday and Thursday ...”
+    # Pass E: “... due by Tuesday and Thursday ... [maybe followed by date tokens]”
     last_concrete_date_raw: Optional[str] = None
     lines = text.splitlines()
     for ln in lines:
@@ -391,13 +345,18 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
             continue
 
         # If the same line has explicit dates after the weekdays, prefer those
-        tail = ln_c[m.end():]
+        tail = ln_c[m.end() :]
         dates_in_tail = [_clean(x) for x in re.findall(DATE_TOKEN, tail)]
         if dates_in_tail:
             for d in dates_in_tail:
                 iso = _norm_date_to_iso(d, fallback_year)
                 results.append(
-                    {"title": title_left, "due_date_raw": d, "due_date_iso": iso}
+                    {
+                        "title": title_left,
+                        "due_date_raw": d,
+                        "due_date_iso": iso,
+                        "assignment_type": _guess_assignment_type(title_left),
+                    }
                 )
             continue
 
@@ -407,13 +366,15 @@ def extract_from_text(full_text: str, fallback_year: Optional[int]) -> List[Dict
             f" (week of {last_concrete_date_raw})" if last_concrete_date_raw else ""
         )
         results.append(
-            {"title": title_left, "due_date_raw": context, "due_date_iso": ""}
+            {
+                "title": title_left,
+                "due_date_raw": context,
+                "due_date_iso": "",
+                "assignment_type": _guess_assignment_type(title_left),
+            }
         )
 
-    # Dedup, then attach category + display date + time
-    results = _unique(results)
-    results = _attach_category_and_time(results)
-    return results
+    return _unique(results)
 
 
 # -------------------------
@@ -426,13 +387,7 @@ def extract_assignments_from_pdf(pdf_path: str) -> Dict[str, Any]:
       {
         'course_name': str,
         'semester_year': 'Fall 2025' (if found) or '',
-        'items': [
-          {
-            'title','due_date_raw','due_date_iso','page',
-            'category','due_date_mdy','due_time','due_datetime_iso'
-          }...
-        ],
-        'full_text': 'entire PDF text as a single string'
+        'items': [{'title','due_date_raw','due_date_iso','assignment_type','page'}...]
       }
     """
     if fitz is None:
@@ -482,14 +437,15 @@ def extract_assignments_from_pdf(pdf_path: str) -> Dict[str, Any]:
         "course_name": course_name,
         "semester_year": semester_year,
         "items": enriched,
-        "full_text": joined,  # full PDF text for LLM
     }
 
 
+# Optional helper used elsewhere
 def normalize_date_text(text: str) -> str:
     return _norm_date_to_iso(text, fallback_year=None)
 
 
+# Byte helper (used by /assignments/pdf)
 def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> Dict[str, Any]:
     """
     Same idea as extract_assignments_from_pdf, but works from in-memory bytes.
@@ -498,12 +454,10 @@ def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> Dict[str, Any]:
         'course_name': str,
         'items': [
           {
-            'title','due_date_raw','due_date_iso',
-            'page','course',
-            'category','due_date_mdy','due_time','due_datetime_iso'
+            'title', 'due_date_raw', 'due_date_iso', 'assignment_type',
+            'page'?, 'course'?
           }, ...
-        ],
-        'full_text': 'entire PDF text as a single string'
+        ]
       }
     """
     if fitz is None:
@@ -548,14 +502,10 @@ def extract_assignments_from_pdf_bytes(pdf_bytes: bytes) -> Dict[str, Any]:
     return {
         "course_name": course_name,
         "items": enriched,
-        "full_text": joined,
     }
 
 
+# Text helper (kept for /assignments/text)
 def extract_assignments_from_text(text: str) -> List[Dict[str, Any]]:
-    """
-    Plain-text helper used by /assignments/text.
-    Items already include category + time + display date.
-    """
     fallback_year = _detect_fallback_year(text)
     return extract_from_text(text, fallback_year)

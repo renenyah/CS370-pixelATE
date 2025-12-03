@@ -23,9 +23,9 @@ import {
   AssignmentType,
   safeISO,
 } from "./AssignmentsContext";
-import DraftEditorModal from "./DraftEditorModal";
 import { colors } from "../constant/colors";
 import { API_BASE } from "../constant/api";
+import DraftEditorModal from "./DraftEditorModal";
 
 type Props = {
   visible: boolean;
@@ -71,13 +71,13 @@ export default function AddAssignmentModal({
 }: Props) {
   const { addAssignmentsFromDrafts } = useAssignments();
 
-  // manual single-assignment form
+  // Manual single-assignment form
   const [title, setTitle] = useState("");
   const [course, setCourse] = useState(initialCourse || "");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<AssignmentType>("Assignment");
 
-  // date & time with default 11:59 pm
+  // Date & time state (default 11:59pm)
   const defaultDate = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -95,9 +95,9 @@ export default function AddAssignmentModal({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // extracted from image → DraftEditorModal
+  // OCR / image parsing state
   const [parsing, setParsing] = useState(false);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [imageDrafts, setImageDrafts] = useState<Draft[]>([]);
   const [editorVisible, setEditorVisible] = useState(false);
 
   const resetForm = () => {
@@ -107,7 +107,7 @@ export default function AddAssignmentModal({
     setType("Assignment");
     setDate(defaultDate);
     setTime(defaultTime);
-    setDrafts([]);
+    setImageDrafts([]);
     setEditorVisible(false);
   };
 
@@ -117,7 +117,10 @@ export default function AddAssignmentModal({
   };
 
   const handleBackendError = (msg?: string) => {
-    Alert.alert("Upload failed", msg || "Server error");
+    Alert.alert(
+      "Upload failed",
+      msg || "There was a problem parsing this image."
+    );
   };
 
   const combineDateTimeToString = (d: Date, t: Date): string => {
@@ -135,7 +138,6 @@ export default function AddAssignmentModal({
     const yyyy = combined.getFullYear();
     const hh = combined.getHours().toString().padStart(2, "0");
     const min = combined.getMinutes().toString().padStart(2, "0");
-    // string that safeISO can parse
     return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
   };
 
@@ -163,14 +165,15 @@ export default function AddAssignmentModal({
     closeAll();
   };
 
-  const mapTypeFromBackend = (raw?: string): AssignmentType => {
-    if (!raw) return "Assignment";
+  const capitalizeType = (raw: string): AssignmentType => {
     const lower = raw.toLowerCase();
     if (lower.includes("quiz")) return "Quiz";
-    if (lower.includes("exam") || lower.includes("test") || lower.includes("midterm") || lower.includes("final"))
+    if (lower.includes("exam") || lower.includes("test"))
       return "Test";
-    if (lower.includes("project")) return "Project";
-    if (lower.includes("discussion")) return "Discussion";
+    if (lower.includes("project"))
+      return "Project";
+    if (lower.includes("discussion"))
+      return "Discussion";
     if (lower.includes("reading")) return "Reading";
     if (lower.includes("art")) return "Art";
     return "Assignment";
@@ -181,8 +184,12 @@ export default function AddAssignmentModal({
       id: nextDraftId(),
       title: it.title || "Untitled",
       course: it.course || course || "Untitled Course",
-      type: mapTypeFromBackend(it.assignment_type),
-      dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
+      type: it.assignment_type
+        ? capitalizeType(it.assignment_type)
+        : "Assignment",
+      dueISO: safeISO(
+        it.due_date_iso || it.due_date_raw || null
+      ),
       description: "",
     }));
 
@@ -194,17 +201,18 @@ export default function AddAssignmentModal({
       return;
     }
 
-    setDrafts(ds);
-    setEditorVisible(true); // open review popup
+    setImageDrafts(ds);
+    setEditorVisible(true);
   };
 
-  // ---------- IMAGE / OCR ----------
+  // ------------ IMAGE / OCR ------------
   const handlePickImage = async () => {
-    const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: false,
-      quality: 1,
-    });
+    const res =
+      await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 1,
+      });
 
     if (res.canceled || !res.assets?.[0]) return;
 
@@ -216,7 +224,8 @@ export default function AddAssignmentModal({
         "file",
         {
           uri: asset.uri,
-          name: asset.fileName || `image_${Date.now()}.jpg`,
+          name:
+            asset.fileName || `image_${Date.now()}.jpg`,
           type: asset.type || "image/jpeg",
         } as any
       );
@@ -233,8 +242,14 @@ export default function AddAssignmentModal({
       });
 
       if (!resp.ok) {
-        console.log("Image resp not ok:", resp.status, resp.statusText);
-        return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
+        console.log(
+          "Image resp not ok:",
+          resp.status,
+          resp.statusText
+        );
+        return handleBackendError(
+          `HTTP ${resp.status} – ${resp.statusText}`
+        );
       }
 
       let json: ApiResponse | any;
@@ -242,7 +257,9 @@ export default function AddAssignmentModal({
         json = (await resp.json()) as ApiResponse;
       } catch (e: any) {
         console.log("Image JSON parse error:", e);
-        return handleBackendError("Could not parse server response.");
+        return handleBackendError(
+          "Could not parse server response."
+        );
       }
 
       console.log(
@@ -250,11 +267,22 @@ export default function AddAssignmentModal({
         JSON.stringify(json)
       );
 
+      // If backend reports status: "error", surface that
+      if (json?.status === "error") {
+        return handleBackendError(json?.message || "OCR error.");
+      }
+
       const items = Array.isArray(json?.items)
         ? json.items
         : Array.isArray(json)
         ? json
         : [];
+
+      if (!items.length) {
+        return handleBackendError(
+          "No assignments found in this image."
+        );
+      }
 
       makeDraftsFromItems(items);
     } catch (e: any) {
@@ -296,70 +324,98 @@ export default function AddAssignmentModal({
         <View style={styles.overlay}>
           <View style={styles.sheet}>
             <View style={styles.headerRow}>
-              <Text style={styles.title}>Add Assignment</Text>
-              <TouchableOpacity onPress={closeAll}>
-                <X size={22} color={colors.textPrimary} />
+              <Text style={styles.title}>
+                Add Assignment
+              </Text>
+              <TouchableOpacity
+                onPress={closeAll}
+              >
+                <X
+                  size={22}
+                  color={colors.textPrimary}
+                />
               </TouchableOpacity>
             </View>
 
             <ScrollView
               style={{ maxHeight: 500 }}
-              contentContainerStyle={{ paddingBottom: 16 }}
+              contentContainerStyle={{
+                paddingBottom: 16,
+              }}
             >
-              {/* ---------- TOP: Upload image first ---------- */}
-              <Text style={styles.label}>Upload screenshot / photo</Text>
+              {/* --- Upload image FIRST (per your request) --- */}
+              <Text style={styles.label}>
+                Upload screenshot / photo
+              </Text>
               <TouchableOpacity
                 style={styles.fileBtn}
                 onPress={handlePickImage}
                 disabled={parsing}
               >
-                <ImageIcon size={18} color={colors.textPrimary} />
+                <ImageIcon
+                  size={18}
+                  color={colors.textPrimary}
+                />
                 <Text style={styles.fileBtnText}>
-                  {parsing ? "Parsing…" : "Choose image from gallery"}
+                  {parsing
+                    ? "Parsing…"
+                    : "Choose image"}
                 </Text>
               </TouchableOpacity>
 
               {/* Divider */}
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or add manually</Text>
+                <Text style={styles.dividerText}>
+                  or add manually
+                </Text>
                 <View style={styles.dividerLine} />
               </View>
 
-              {/* ---------- Manual form ---------- */}
+              {/* Manual form */}
               <Text style={styles.label}>Title</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g., Homework 3 – Dynamic Programming"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
                 value={title}
                 onChangeText={setTitle}
               />
 
-              <Text style={styles.label}>Class</Text>
+              <Text style={styles.label}>
+                Class
+              </Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g., CS 370 – Algorithms"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
                 value={course}
                 onChangeText={setCourse}
               />
 
-              <Text style={styles.label}>Assignment type</Text>
+              <Text style={styles.label}>
+                Assignment type
+              </Text>
               <View style={styles.typeRow}>
                 {TYPE_OPTIONS.map((t) => (
                   <TouchableOpacity
                     key={t}
                     style={[
                       styles.typeChip,
-                      type === t && styles.typeChipActive,
+                      type === t &&
+                        styles.typeChipActive,
                     ]}
                     onPress={() => setType(t)}
                   >
                     <Text
                       style={[
                         styles.typeChipText,
-                        type === t && styles.typeChipTextActive,
+                        type === t &&
+                          styles.typeChipTextActive,
                       ]}
                     >
                       {t}
@@ -369,24 +425,44 @@ export default function AddAssignmentModal({
               </View>
 
               <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 6 }}>
-                  <Text style={styles.label}>Due date</Text>
+                <View
+                  style={{ flex: 1, marginRight: 6 }}
+                >
+                  <Text style={styles.label}>
+                    Due date
+                  </Text>
                   <TouchableOpacity
                     style={styles.pickerButton}
-                    onPress={() => setShowDatePicker(true)}
+                    onPress={() =>
+                      setShowDatePicker(true)
+                    }
                   >
-                    <Text style={styles.pickerButtonText}>
+                    <Text
+                      style={
+                        styles.pickerButtonText
+                      }
+                    >
                       {formattedDate}
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <View style={{ flex: 1, marginLeft: 6 }}>
-                  <Text style={styles.label}>Due time</Text>
+                <View
+                  style={{ flex: 1, marginLeft: 6 }}
+                >
+                  <Text style={styles.label}>
+                    Due time
+                  </Text>
                   <TouchableOpacity
                     style={styles.pickerButton}
-                    onPress={() => setShowTimePicker(true)}
+                    onPress={() =>
+                      setShowTimePicker(true)
+                    }
                   >
-                    <Text style={styles.pickerButtonText}>
+                    <Text
+                      style={
+                        styles.pickerButtonText
+                      }
+                    >
                       {formattedTime}
                     </Text>
                   </TouchableOpacity>
@@ -397,7 +473,11 @@ export default function AddAssignmentModal({
                 <DateTimePicker
                   value={date}
                   mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  display={
+                    Platform.OS === "ios"
+                      ? "spinner"
+                      : "default"
+                  }
                   onChange={(
                     _event: DateTimePickerEvent,
                     selected?: Date
@@ -415,7 +495,11 @@ export default function AddAssignmentModal({
                 <DateTimePicker
                   value={time}
                   mode="time"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  display={
+                    Platform.OS === "ios"
+                      ? "spinner"
+                      : "default"
+                  }
                   onChange={(
                     _event: DateTimePickerEvent,
                     selected?: Date
@@ -429,11 +513,15 @@ export default function AddAssignmentModal({
                 />
               )}
 
-              <Text style={styles.label}>Description (optional)</Text>
+              <Text style={styles.label}>
+                Description (optional)
+              </Text>
               <TextInput
                 style={[styles.input, { height: 80 }]}
                 placeholder="Notes or details…"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
                 multiline
                 textAlignVertical="top"
                 value={description}
@@ -444,37 +532,46 @@ export default function AddAssignmentModal({
             {/* Actions */}
             <View style={styles.actionsRow}>
               <TouchableOpacity
-                style={[styles.actionBtn, styles.cancelBtn]}
+                style={[
+                  styles.actionBtn,
+                  styles.cancelBtn,
+                ]}
                 onPress={closeAll}
                 disabled={parsing}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.actionBtn, styles.primaryBtn]}
+                style={[
+                  styles.actionBtn,
+                  styles.primaryBtn,
+                ]}
                 onPress={handleSaveManual}
                 disabled={parsing}
               >
-                <Text style={styles.primaryText}>Save assignment</Text>
+                <Text style={styles.primaryText}>
+                  Save assignment
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* Separate editor popup for extracted assignments */}
+      {/* Separate popup to review image-extracted assignments */}
       <DraftEditorModal
         visible={editorVisible}
-        initialDrafts={drafts}
+        initialDrafts={imageDrafts}
         onClose={() => setEditorVisible(false)}
-        onSave={(cleanedDrafts) => {
-          addAssignmentsFromDrafts(
-            cleanedDrafts.map((d) => ({
-              ...d,
-              dueISO: safeISO(d.dueISO || null),
-            }))
-          );
+        onSave={(drafts) => {
+          const cleaned = drafts.map((d) => ({
+            ...d,
+            dueISO: safeISO(d.dueISO || null),
+          }));
+          addAssignmentsFromDrafts(cleaned);
           setEditorVisible(false);
           closeAll();
         }}

@@ -36,6 +36,41 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+// --- helpers for week calculations ----
+function isoToDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map((n) => Number(n));
+  return new Date(y, m - 1, d);
+}
+
+function dateToISO(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+/**
+ * Given a center date (selected day), return the Sunday–Saturday
+ * ISO range that week.
+ */
+function getWeekBounds(centerISO: string) {
+  const base = isoToDate(centerISO);
+  const day = base.getDay(); // 0 = Sun ... 6 = Sat
+
+  const start = new Date(base);
+  start.setDate(base.getDate() - day);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  return {
+    startISO: dateToISO(start),
+    endISO: dateToISO(end),
+    startDate: start,
+    endDate: end,
+  };
+}
+
 export default function CalendarScreen() {
   const { assignments } = useAssignments();
 
@@ -120,6 +155,44 @@ export default function CalendarScreen() {
         isSameISO(a.dueISO || null, selectedISO)
       ),
     [assignments, selectedISO]
+  );
+
+  // --- Week view data: assignments in the same week as selectedISO ---
+  const {
+    startISO,
+    endISO,
+    startDate: weekStartDate,
+    endDate: weekEndDate,
+  } = useMemo(
+    () => getWeekBounds(selectedISO),
+    [selectedISO]
+  );
+
+  const weekRangeLabel = useMemo(
+    () =>
+      `${weekStartDate.toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+      })} – ${weekEndDate.toLocaleDateString([], {
+        month: "short",
+        day: "numeric",
+      })}`,
+    [weekStartDate, weekEndDate]
+  );
+
+  const weekAssignments = useMemo(
+    () =>
+      assignments
+        .filter((a) => {
+          const iso = a.dueISO;
+          if (!iso) return false;
+          // 'YYYY-MM-DD' string compare works because it's chronological
+          return iso >= startISO && iso <= endISO;
+        })
+        .sort((a, b) =>
+          (a.dueISO || "").localeCompare(b.dueISO || "")
+        ),
+    [assignments, startISO, endISO]
   );
 
   return (
@@ -257,19 +330,50 @@ export default function CalendarScreen() {
         </>
       )}
 
-      {/* WEEK VIEW (simple placeholder but uses selected date) */}
+      {/* WEEK VIEW – now real data, same general UI */}
       {view === "week" && (
-        <View style={styles.placeholderBox}>
-          <Text style={styles.placeholderTitle}>
-            Week View
+        <View style={styles.dayBox}>
+          <Text style={styles.dayTitle}>
+            Week of {weekRangeLabel}
           </Text>
-          <Text style={styles.placeholderText}>
-            This view will show assignments grouped by day for
-            this week. For now, it highlights the selected date:
-          </Text>
-          <Text style={styles.highlight}>
-            {selectedDateLabel}
-          </Text>
+          {weekAssignments.length === 0 ? (
+            <Text style={styles.dayEmpty}>
+              No assignments due this week.
+            </Text>
+          ) : (
+            <View style={{ gap: 10, marginTop: 10 }}>
+              {weekAssignments.map((a) => (
+                <View key={a.id} style={styles.taskCard}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.taskTitle}>
+                      {a.title}
+                    </Text>
+                    {!!a.course && (
+                      <Text style={styles.taskCourse}>
+                        {a.course}
+                      </Text>
+                    )}
+                    {!!a.type && (
+                      <Text style={styles.taskType}>
+                        {a.type}
+                      </Text>
+                    )}
+                    {!!a.dueISO && (
+                      <Text style={styles.taskType}>
+                        Due{" "}
+                        {new Date(
+                          a.dueISO
+                        ).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
       )}
 

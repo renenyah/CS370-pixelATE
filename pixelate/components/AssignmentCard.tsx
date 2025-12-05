@@ -11,11 +11,7 @@ import {
   Alert,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import {
-  Image as ImageIcon,
-  Trash2,
-  X,
-} from "lucide-react-native";
+import { Image as ImageIcon, Trash2, X } from "lucide-react-native";
 
 import { useAssignments, safeISO, Draft } from "./AssignmentsContext";
 import { API_BASE } from "../constant/api";
@@ -23,12 +19,8 @@ import { colors } from "../constant/colors";
 
 type Props = {
   title: string;
-  dueDate: string;
+  dueDate: string; // display string, e.g. "12/6/2025"
   course: string;
-  /**
-   * When true, shows the "Upload from image" button and editor.
-   * You can set this only on the screen where you add assignments.
-   */
   enableImageImport?: boolean;
 };
 
@@ -45,23 +37,41 @@ type OcrResponse = {
   items?: OcrItem[];
 };
 
+// Match Draft["type"]
 const ASSIGNMENT_TYPES: Draft["type"][] = [
   "Assignment",
   "Quiz",
   "Test",
-  "Presentation",
+  "Project",
 ];
 
 function normalizeTypeFromBackend(t?: string | null): Draft["type"] {
   const v = (t || "").toLowerCase();
   if (v.includes("quiz")) return "Quiz";
   if (v.includes("exam") || v.includes("test")) return "Test";
-  if (v.includes("present")) return "Presentation";
+  if (v.includes("present")) return "Project";
   return "Assignment";
 }
 
 function nextDraftId(): string {
   return `img_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function splitDue(due?: string | null): { date: string; time: string } {
+  if (!due) return { date: "", time: "" };
+  const trimmed = due.trim();
+  const match = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})(?:[T\s](\d{2}:\d{2}))?$/
+  );
+  if (match) {
+    return {
+      date: match[1],
+      time: match[2] || "",
+    };
+  }
+  const date = trimmed.slice(0, 10);
+  const time = trimmed.slice(11, 16);
+  return { date, time };
 }
 
 export default function AssignmentCard({
@@ -92,10 +102,8 @@ export default function AssignmentCard({
     const ds: Draft[] = items.map((it) => ({
       id: nextDraftId(),
       title: it.title || "Untitled",
-      // force to this card's class so it’s “for a specific class”
       course: course || "",
       type: normalizeTypeFromBackend(it.assignment_type),
-      // backend already gives iso with 23:59 default; safeISO keeps or normalizes
       dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
       description: "",
     }));
@@ -140,7 +148,9 @@ export default function AssignmentCard({
 
       if (!resp.ok) {
         console.log("Image resp not ok:", resp.status, resp.statusText);
-        return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
+        return handleBackendError(
+          `HTTP ${resp.status} – ${resp.statusText}`
+        );
       }
 
       let json: OcrResponse | any;
@@ -151,7 +161,10 @@ export default function AssignmentCard({
         return handleBackendError("Could not parse server response.");
       }
 
-      console.log("Image resp (single assignment) →", JSON.stringify(json));
+      console.log(
+        "Image resp (single assignment) →",
+        JSON.stringify(json)
+      );
 
       const items = Array.isArray(json?.items)
         ? json.items
@@ -168,9 +181,32 @@ export default function AssignmentCard({
     }
   }, [course]);
 
-  const updateDraft = (id: string, field: keyof Draft, value: string) => {
+  const updateDraftField = (
+    id: string,
+    field: keyof Draft,
+    value: string
+  ) => {
     setDrafts((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, [field]: value } : d))
+      prev.map((d) =>
+        d.id === id ? { ...d, [field]: value } : d
+      )
+    );
+  };
+
+  const updateDraftDue = (
+    id: string,
+    newDate: string,
+    newTime: string
+  ) => {
+    setDrafts((prev) =>
+      prev.map((d) => {
+        if (d.id !== id) return d;
+        const date = newDate.trim();
+        const time = newTime.trim();
+        const combined =
+          date && time ? `${date} ${time}` : date || "";
+        return { ...d, dueISO: combined || null };
+      })
     );
   };
 
@@ -186,10 +222,26 @@ export default function AssignmentCard({
         title: "",
         course: course || "",
         type: "Assignment",
-        dueISO: safeISO(null),
+        dueISO: null,
         description: "",
       },
     ]);
+  };
+
+  // 🔹 New: open editor using this card’s current values
+  const openEditWithCurrent = () => {
+    const iso = safeISO(dueDate || null);
+    setDrafts([
+      {
+        id: nextDraftId(),
+        title: title || "",
+        course: course || "",
+        type: "Assignment",
+        dueISO: iso,
+        description: "",
+      },
+    ]);
+    setEditOpen(true);
   };
 
   const handleSaveAssignments = () => {
@@ -199,7 +251,7 @@ export default function AssignmentCard({
     }
     const cleaned = drafts.map((d) => ({
       ...d,
-      course: course || d.course,
+      course: d.course || course || "",
       dueISO: safeISO(d.dueISO || null),
     }));
     addAssignmentsFromDrafts(cleaned);
@@ -209,7 +261,7 @@ export default function AssignmentCard({
 
   return (
     <>
-      {/* Original card UI (unchanged visuals) */}
+      {/* Card UI – only tiny change is the new Edit button on the right */}
       <View style={styles.card}>
         <View>
           <Text style={styles.title}>{title}</Text>
@@ -217,21 +269,30 @@ export default function AssignmentCard({
           {!!dueDate && <Text style={styles.date}>Due: {dueDate}</Text>}
         </View>
 
-        {enableImageImport && (
+        <View style={styles.rightButtons}>
           <TouchableOpacity
-            style={styles.imageBtn}
-            onPress={handleUploadImage}
-            disabled={parsing}
+            style={styles.editBtn}
+            onPress={openEditWithCurrent}
           >
-            <ImageIcon size={16} color="#111827" />
-            <Text style={styles.imageBtnText}>
-              {parsing ? "Parsing…" : "Upload from image"}
-            </Text>
+            <Text style={styles.editBtnText}>Edit</Text>
           </TouchableOpacity>
-        )}
+
+          {enableImageImport && (
+            <TouchableOpacity
+              style={styles.imageBtn}
+              onPress={handleUploadImage}
+              disabled={parsing}
+            >
+              <ImageIcon size={16} color="#111827" />
+              <Text style={styles.imageBtnText}>
+                {parsing ? "Parsing…" : "Upload"}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* Editor modal for the extracted assignments */}
+      {/* Editor modal */}
       <Modal
         visible={editOpen}
         transparent
@@ -241,97 +302,155 @@ export default function AssignmentCard({
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Review extracted assignments</Text>
+              <Text style={styles.modalTitle}>
+                Edit assignment
+              </Text>
               <TouchableOpacity onPress={() => setEditOpen(false)}>
                 <X size={20} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalSub}>
-              These were pulled from the image for{" "}
-              <Text style={{ fontWeight: "700" }}>{course || "this class"}</Text>.
-              Edit the fields, change the type, or delete/add items. To change the
-              default 11:59pm time, include a time in the date like
-              {" 2025-12-01T15:00"}.
+              Change the title, class, assignment type, due
+              date, due time, or description. When you’re
+              done, tap “Save assignments”.
             </Text>
 
             <ScrollView
               style={{ maxHeight: 420 }}
               contentContainerStyle={{ paddingBottom: 8 }}
             >
-              {drafts.map((d) => (
-                <View key={d.id} style={styles.editCard}>
-                  <View style={styles.editHeaderRow}>
-                    <Text style={styles.editLabel}>Assignment title</Text>
-                    <TouchableOpacity onPress={() => deleteDraft(d.id)}>
-                      <Trash2 size={16} color={colors.textSecondary} />
-                    </TouchableOpacity>
-                  </View>
-
-                  <TextInput
-                    style={styles.input}
-                    value={d.title}
-                    onChangeText={(t) => updateDraft(d.id, "title", t)}
-                    placeholder="Assignment title"
-                    placeholderTextColor={colors.textSecondary + "99"}
-                  />
-
-                  <Text style={styles.editLabel}>Class</Text>
-                  <View style={styles.classPill}>
-                    <Text style={styles.classPillText}>
-                      {course || d.course || "This class"}
-                    </Text>
-                  </View>
-
-                  <Text style={styles.editLabel}>Type</Text>
-                  <View style={styles.typeRow}>
-                    {ASSIGNMENT_TYPES.map((t) => (
+              {drafts.map((d) => {
+                const { date, time } = splitDue(d.dueISO || "");
+                return (
+                  <View key={d.id} style={styles.editCard}>
+                    <View style={styles.editHeaderRow}>
+                      <Text style={styles.editLabel}>
+                        Assignment title
+                      </Text>
                       <TouchableOpacity
-                        key={t}
-                        style={[
-                          styles.typeChip,
-                          d.type === t && styles.typeChipActive,
-                        ]}
-                        onPress={() => updateDraft(d.id, "type", t)}
+                        onPress={() => deleteDraft(d.id)}
                       >
-                        <Text
-                          style={[
-                            styles.typeChipText,
-                            d.type === t && styles.typeChipTextActive,
-                          ]}
-                        >
-                          {t}
-                        </Text>
+                        <Trash2
+                          size={16}
+                          color={colors.textSecondary}
+                        />
                       </TouchableOpacity>
-                    ))}
+                    </View>
+
+                    <TextInput
+                      style={styles.input}
+                      value={d.title}
+                      onChangeText={(t) =>
+                        updateDraftField(d.id, "title", t)
+                      }
+                      placeholder="Assignment title"
+                      placeholderTextColor={
+                        colors.textSecondary + "99"
+                      }
+                    />
+
+                    <Text style={styles.editLabel}>Class</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={d.course || course || ""}
+                      onChangeText={(t) =>
+                        updateDraftField(d.id, "course", t)
+                      }
+                      placeholder="e.g., CS 370 – Algorithms"
+                      placeholderTextColor={
+                        colors.textSecondary + "99"
+                      }
+                    />
+
+                    <Text style={styles.editLabel}>
+                      Assignment type
+                    </Text>
+                    <View style={styles.typeRow}>
+                      {ASSIGNMENT_TYPES.map((t) => {
+                        const active = d.type === t;
+                        return (
+                          <TouchableOpacity
+                            key={t}
+                            style={[
+                              styles.typeChip,
+                              active && styles.typeChipActive,
+                            ]}
+                            onPress={() =>
+                              updateDraftField(d.id, "type", t)
+                            }
+                          >
+                            <Text
+                              style={[
+                                styles.typeChipText,
+                                active &&
+                                  styles.typeChipTextActive,
+                              ]}
+                            >
+                              {t}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <Text style={styles.editLabel}>
+                      Due date (YYYY-MM-DD)
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={date}
+                      onChangeText={(t) =>
+                        updateDraftDue(d.id, t, time)
+                      }
+                      placeholder="2025-11-21"
+                      placeholderTextColor={
+                        colors.textSecondary + "99"
+                      }
+                    />
+
+                    <Text style={styles.editLabel}>
+                      Due time (HH:MM — optional)
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={time}
+                      onChangeText={(t) =>
+                        updateDraftDue(d.id, date, t)
+                      }
+                      placeholder="23:59"
+                      placeholderTextColor={
+                        colors.textSecondary + "99"
+                      }
+                    />
+
+                    <Text style={styles.editLabel}>
+                      Description (optional)
+                    </Text>
+                    <TextInput
+                      style={[styles.input, { height: 70 }]}
+                      multiline
+                      textAlignVertical="top"
+                      value={d.description || ""}
+                      onChangeText={(t) =>
+                        updateDraftField(d.id, "description", t)
+                      }
+                      placeholder="Notes or details…"
+                      placeholderTextColor={
+                        colors.textSecondary + "99"
+                      }
+                    />
                   </View>
+                );
+              })}
 
-                  <Text style={styles.editLabel}>
-                    Due date &amp; time (YYYY-MM-DD or YYYY-MM-DDTHH:MM)
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    value={d.dueISO || ""}
-                    onChangeText={(t) => updateDraft(d.id, "dueISO", t)}
-                    placeholder="2025-11-21 or 2025-11-21T23:59"
-                    placeholderTextColor={colors.textSecondary + "99"}
-                  />
-
-                  <Text style={styles.editLabel}>Description (optional)</Text>
-                  <TextInput
-                    style={[styles.input, { height: 70 }]}
-                    multiline
-                    textAlignVertical="top"
-                    value={d.description || ""}
-                    onChangeText={(t) => updateDraft(d.id, "description", t)}
-                    placeholder="Notes or details…"
-                    placeholderTextColor={colors.textSecondary + "99"}
-                  />
-                </View>
-              ))}
-
-              <TouchableOpacity style={styles.addRowBtn} onPress={addEmptyDraft}>
-                <Text style={styles.addRowText}>+ Add another assignment</Text>
+              <TouchableOpacity
+                style={styles.addRowBtn}
+                onPress={addEmptyDraft}
+              >
+                <Text style={styles.addRowText}>
+                  + Add another assignment
+                </Text>
               </TouchableOpacity>
             </ScrollView>
 
@@ -340,14 +459,18 @@ export default function AssignmentCard({
                 style={[styles.modalBtn, styles.modalCancelBtn]}
                 onPress={() => setEditOpen(false)}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={styles.modalCancelText}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.modalBtn, styles.modalSaveBtn]}
                 onPress={handleSaveAssignments}
               >
-                <Text style={styles.modalSaveText}>Save assignments</Text>
+                <Text style={styles.modalSaveText}>
+                  Save assignments
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -371,6 +494,25 @@ const styles = StyleSheet.create({
   course: { color: "#6B7280", fontSize: 12, marginTop: 2 },
   date: { color: "#7C3AED", fontWeight: "600", marginTop: 4 },
 
+  rightButtons: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  editBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#FFFFFF",
+  },
+  editBtnText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#111827",
+  },
+
   imageBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -386,7 +528,6 @@ const styles = StyleSheet.create({
     color: "#111827",
   },
 
-  // Modal styles
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",
@@ -417,7 +558,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 13,
   },
-
   editCard: {
     borderRadius: 14,
     borderWidth: 1,
@@ -449,21 +589,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginBottom: 4,
   },
-
-  classPill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#EEF2FF",
-    marginBottom: 4,
-  },
-  classPillText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#3730A3",
-  },
-
   typeRow: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -490,7 +615,6 @@ const styles = StyleSheet.create({
   typeChipTextActive: {
     color: "#FFFFFF",
   },
-
   addRowBtn: {
     marginTop: 4,
     paddingVertical: 10,
@@ -503,7 +627,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: colors.textPrimary,
   },
-
   modalActionsRow: {
     flexDirection: "row",
     justifyContent: "space-between",

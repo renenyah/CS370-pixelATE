@@ -17,7 +17,8 @@ export type AssignmentType =
   | "Quiz"
   | "Test"
   | "Project"
-  | "Other";
+  | "Other"
+  |"Presentation";
 
 export type Assignment = {
   id: string;
@@ -32,8 +33,7 @@ export type Assignment = {
   semester?: string;
   year?: number;
   color?: string;
-
-  // ✅ NEW: can mark as complete
+  // can mark as complete
   completed?: boolean;
 };
 
@@ -59,7 +59,7 @@ export type ClassFolder = {
   year?: number;
 };
 
-type AssignmentsContextValue = {
+export type AssignmentsContextValue = {
   assignments: Assignment[];
   classes: ClassFolder[];
   addAssignmentsFromDrafts: (drafts: Draft[]) => void;
@@ -69,8 +69,14 @@ type AssignmentsContextValue = {
     semester?: string;
     year?: number;
   }) => void;
-  // ✅ NEW:
+  updateClassFolder: (input: {
+    oldName: string;
+    newName: string;
+    semester?: string;
+    year?: number;
+  }) => void;
   toggleAssignmentCompleted: (id: string) => void;
+  updateAssignment: (id: string, changes: Partial<Assignment>) => void;
 };
 
 const AssignmentsContext = createContext<AssignmentsContextValue | undefined>(
@@ -105,8 +111,7 @@ export function safeISO(input?: string | null): string | null {
   if (mdy) {
     const m = Number(mdy[1]) - 1;
     const day = Number(mdy[2]);
-    const y =
-      mdy[3].length === 2 ? Number("20" + mdy[3]) : Number(mdy[3]);
+    const y = mdy[3].length === 2 ? Number("20" + mdy[3]) : Number(mdy[3]);
     const dt = new Date(y, m, day);
     if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
   }
@@ -142,7 +147,7 @@ function nextId(prefix = "a"): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// ---------- semester helper (for “current semester only” on Home) ----------
+// ---------- semester helpers ----------
 
 function currentSemesterLabel(): string {
   const now = new Date();
@@ -189,7 +194,7 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
             semester: d.semester,
             year: d.year,
             color: d.color,
-            completed: false, // ✅ new assignments start as NOT completed
+            completed: false, // new assignments start as NOT completed
           })),
         ]);
       },
@@ -220,12 +225,61 @@ export function AssignmentsProvider({ children }: { children: ReactNode }) {
         });
       },
 
-      // ✅ toggle complete / incomplete
+      // edit class name / semester / year
+      updateClassFolder: ({ oldName, newName, semester, year }) => {
+        const trimmedNew = newName.trim() || oldName;
+
+        // update class folders
+        setClasses((prev) =>
+          prev.map((c) =>
+            c.name === oldName
+              ? {
+                  ...c,
+                  name: trimmedNew,
+                  semester: semester ?? c.semester,
+                  year: year ?? c.year,
+                }
+              : c
+          )
+        );
+
+        // also update assignments that belong to that class
+        setAssignments((prev) =>
+          prev.map((a) =>
+            a.course === oldName
+              ? {
+                  ...a,
+                  course: trimmedNew,
+                  semester: semester ?? a.semester,
+                  year: year ?? a.year,
+                }
+              : a
+          )
+        );
+      },
+
+      // toggle complete / incomplete
       toggleAssignmentCompleted: (id: string) => {
         setAssignments((prev) =>
           prev.map((a) =>
             a.id === id ? { ...a, completed: !a.completed } : a
           )
+        );
+      },
+
+      // update a single assignment's fields
+      updateAssignment: (id, changes) => {
+        setAssignments((prev) =>
+          prev.map((a) => {
+            if (a.id !== id) return a;
+            const next: Assignment = { ...a, ...changes };
+
+            // if due date changed, recompute priority
+            if (changes.dueISO !== undefined) {
+              next.priority = priorityFromISO(next.dueISO || null);
+            }
+            return next;
+          })
         );
       },
     }),

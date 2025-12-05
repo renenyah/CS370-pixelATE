@@ -10,12 +10,13 @@ import {
   ScrollView,
   Alert,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { X, Image as ImageIcon } from "lucide-react-native";
+import { X, Image as ImageIcon, Trash2 } from "lucide-react-native";
 
 import {
   useAssignments,
@@ -25,12 +26,13 @@ import {
 } from "./AssignmentsContext";
 import { colors } from "../constant/colors";
 import { API_BASE } from "../constant/api";
-import DraftEditorModal from "./DraftEditorModal";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   initialCourse?: string;
+  /** When provided, we send extracted drafts up and close this modal */
+  onDraftsExtracted?: (drafts: Draft[]) => void;
 };
 
 type DueItem = {
@@ -68,6 +70,7 @@ export default function AddAssignmentModal({
   visible,
   onClose,
   initialCourse,
+  onDraftsExtracted,
 }: Props) {
   const { addAssignmentsFromDrafts } = useAssignments();
 
@@ -77,38 +80,36 @@ export default function AddAssignmentModal({
   const [description, setDescription] = useState("");
   const [type, setType] = useState<AssignmentType>("Assignment");
 
-  // Date & time state (default 11:59pm)
-  const defaultDate = useMemo(() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }, []);
-
+  // Date & time state
+  // Time has a default (11:59 PM). Date is treated as "not chosen" until user picks.
   const defaultTime = useMemo(() => {
     const t = new Date();
-    t.setHours(23, 59, 0, 0); // 11:59pm
+    t.setHours(23, 59, 0, 0);
     return t;
   }, []);
 
-  const [date, setDate] = useState<Date>(defaultDate);
+  const [date, setDate] = useState<Date>(new Date());
+  const [hasPickedDate, setHasPickedDate] = useState(false);
   const [time, setTime] = useState<Date>(defaultTime);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
 
-  // OCR / image parsing state
+  // Extracted from image (used as fallback if onDraftsExtracted not passed)
   const [parsing, setParsing] = useState(false);
-  const [imageDrafts, setImageDrafts] = useState<Draft[]>([]);
-  const [editorVisible, setEditorVisible] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const hasExtractedDrafts = drafts.length > 0;
 
   const resetForm = () => {
     setTitle("");
     setCourse(initialCourse || "");
     setDescription("");
     setType("Assignment");
-    setDate(defaultDate);
+    setDate(new Date());
+    setHasPickedDate(false);
     setTime(defaultTime);
-    setImageDrafts([]);
-    setEditorVisible(false);
+    setDrafts([]);
+    setShowDatePicker(false);
+    setShowTimePicker(false);
   };
 
   const closeAll = () => {
@@ -117,10 +118,7 @@ export default function AddAssignmentModal({
   };
 
   const handleBackendError = (msg?: string) => {
-    Alert.alert(
-      "Upload failed",
-      msg || "There was a problem parsing this image."
-    );
+    Alert.alert("Upload failed", msg || "Server error");
   };
 
   const combineDateTimeToString = (d: Date, t: Date): string => {
@@ -149,8 +147,11 @@ export default function AddAssignmentModal({
       return;
     }
 
-    const dateTimeString = combineDateTimeToString(date, time);
-    const iso = safeISO(dateTimeString);
+    let iso: string | null = null;
+    if (hasPickedDate) {
+      const dateTimeString = combineDateTimeToString(date, time);
+      iso = safeISO(dateTimeString);
+    }
 
     const draft: Draft = {
       id: nextDraftId(),
@@ -168,51 +169,36 @@ export default function AddAssignmentModal({
   const capitalizeType = (raw: string): AssignmentType => {
     const lower = raw.toLowerCase();
     if (lower.includes("quiz")) return "Quiz";
-    if (lower.includes("exam") || lower.includes("test"))
-      return "Test";
-    if (lower.includes("project"))
-      return "Project";
-    if (lower.includes("discussion"))
-      return "Discussion";
+    if (lower.includes("test") || lower.includes("exam")) return "Test";
+    if (lower.includes("project")) return "Project";
+    if (lower.includes("discussion")) return "Discussion";
     if (lower.includes("reading")) return "Reading";
     if (lower.includes("art")) return "Art";
     return "Assignment";
   };
 
-  const makeDraftsFromItems = (items: DueItem[]) => {
+  const makeDraftsFromItems = (items: DueItem[]): Draft[] => {
     const ds: Draft[] = (items || []).map((it) => ({
       id: nextDraftId(),
       title: it.title || "Untitled",
+      // 👇 use the manual Class field if present
       course: it.course || course || "Untitled Course",
-      type: it.assignment_type
-        ? capitalizeType(it.assignment_type)
-        : "Assignment",
-      dueISO: safeISO(
-        it.due_date_iso || it.due_date_raw || null
-      ),
+      type:
+        (it.assignment_type &&
+          capitalizeType(it.assignment_type)) || "Assignment",
+      dueISO: safeISO(it.due_date_iso || it.due_date_raw || null),
       description: "",
     }));
-
-    if (!ds.length) {
-      Alert.alert(
-        "No assignments found",
-        "The extractor didn't find any assignments in this image."
-      );
-      return;
-    }
-
-    setImageDrafts(ds);
-    setEditorVisible(true);
+    return ds;
   };
 
   // ------------ IMAGE / OCR ------------
   const handlePickImage = async () => {
-    const res =
-      await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false,
-        quality: 1,
-      });
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 1,
+    });
 
     if (res.canceled || !res.assets?.[0]) return;
 
@@ -224,8 +210,7 @@ export default function AddAssignmentModal({
         "file",
         {
           uri: asset.uri,
-          name:
-            asset.fileName || `image_${Date.now()}.jpg`,
+          name: asset.fileName || `image_${Date.now()}.jpg`,
           type: asset.type || "image/jpeg",
         } as any
       );
@@ -242,11 +227,7 @@ export default function AddAssignmentModal({
       });
 
       if (!resp.ok) {
-        console.log(
-          "Image resp not ok:",
-          resp.status,
-          resp.statusText
-        );
+        console.log("Image resp not ok:", resp.status, resp.statusText);
         return handleBackendError(
           `HTTP ${resp.status} – ${resp.statusText}`
         );
@@ -257,20 +238,13 @@ export default function AddAssignmentModal({
         json = (await resp.json()) as ApiResponse;
       } catch (e: any) {
         console.log("Image JSON parse error:", e);
-        return handleBackendError(
-          "Could not parse server response."
-        );
+        return handleBackendError("Could not parse server response.");
       }
 
       console.log(
         "Image resp (AddAssignmentModal) →",
         JSON.stringify(json)
       );
-
-      // If backend reports status: "error", surface that
-      if (json?.status === "error") {
-        return handleBackendError(json?.message || "OCR error.");
-      }
 
       const items = Array.isArray(json?.items)
         ? json.items
@@ -279,12 +253,23 @@ export default function AddAssignmentModal({
         : [];
 
       if (!items.length) {
-        return handleBackendError(
-          "No assignments found in this image."
+        Alert.alert(
+          "No assignments found",
+          "The extractor didn't find any assignments in this image."
         );
+        return;
       }
 
-      makeDraftsFromItems(items);
+      const ds = makeDraftsFromItems(items);
+
+      // Preferred: send drafts up so parent can open DraftEditorModal
+      if (onDraftsExtracted) {
+        onDraftsExtracted(ds);
+        closeAll();
+      } else {
+        // Fallback: show inline in this modal
+        setDrafts(ds);
+      }
     } catch (e: any) {
       console.log("Image parse error:", e);
       Alert.alert("Error", String(e?.message || e));
@@ -293,14 +278,39 @@ export default function AddAssignmentModal({
     }
   };
 
+  const updateDraft = (id: string, field: keyof Draft, value: string) => {
+    setDrafts((prev) =>
+      prev.map((d) => (d.id === id ? { ...d, [field]: value } : d))
+    );
+  };
+
+  const deleteDraft = (id: string) => {
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+  };
+
+  const handleSaveExtractedInline = () => {
+    if (!drafts.length) {
+      Alert.alert("Nothing to save", "No extracted assignments.");
+      return;
+    }
+    const cleaned = drafts.map((d) => ({
+      ...d,
+      dueISO: safeISO(d.dueISO || null),
+    }));
+    addAssignmentsFromDrafts(cleaned);
+    closeAll();
+  };
+
   const formattedDate = useMemo(
     () =>
-      date.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
-    [date]
+      hasPickedDate
+        ? date.toLocaleDateString(undefined, {
+            year: "2-digit",
+            month: "2-digit",
+            day: "2-digit",
+          })
+        : "Select date",
+    [date, hasPickedDate]
   );
 
   const formattedTime = useMemo(
@@ -313,62 +323,71 @@ export default function AddAssignmentModal({
     [time]
   );
 
+  // ----- handlers for pickers -----
+  const onChangeDate = (_event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== "ios") {
+      setShowDatePicker(false);
+    }
+    if (!selected) return;
+    setDate(selected);
+    setHasPickedDate(true);
+  };
+
+  const onChangeTime = (_event: DateTimePickerEvent, selected?: Date) => {
+    if (Platform.OS !== "ios") {
+      setShowTimePicker(false);
+    }
+    if (!selected) return;
+    setTime(selected);
+  };
+
+  const hidePickers = () => {
+    setShowDatePicker(false);
+    setShowTimePicker(false);
+  };
+
   return (
-    <>
-      <Modal
-        visible={visible}
-        transparent
-        animationType="fade"
-        onRequestClose={closeAll}
-      >
-        <View style={styles.overlay}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={closeAll}
+    >
+      <View style={styles.overlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={{ width: "100%" }}
+        >
           <View style={styles.sheet}>
             <View style={styles.headerRow}>
-              <Text style={styles.title}>
-                Add Assignment
-              </Text>
-              <TouchableOpacity
-                onPress={closeAll}
-              >
-                <X
-                  size={22}
-                  color={colors.textPrimary}
-                />
+              <Text style={styles.title}>Add Assignment</Text>
+              <TouchableOpacity onPress={closeAll}>
+                <X size={22} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
             <ScrollView
               style={{ maxHeight: 500 }}
-              contentContainerStyle={{
-                paddingBottom: 16,
-              }}
+              contentContainerStyle={{ paddingBottom: 16 }}
+              keyboardShouldPersistTaps="handled"
             >
-              {/* --- Upload image FIRST (per your request) --- */}
-              <Text style={styles.label}>
-                Upload screenshot / photo
-              </Text>
+              {/* Upload image FIRST */}
+              <Text style={styles.label}>Upload image</Text>
               <TouchableOpacity
                 style={styles.fileBtn}
                 onPress={handlePickImage}
                 disabled={parsing}
               >
-                <ImageIcon
-                  size={18}
-                  color={colors.textPrimary}
-                />
+                <ImageIcon size={18} color={colors.textPrimary} />
                 <Text style={styles.fileBtnText}>
-                  {parsing
-                    ? "Parsing…"
-                    : "Choose image"}
+                  {parsing ? "Parsing…" : "Upload screenshot / photo"}
                 </Text>
               </TouchableOpacity>
 
               {/* Divider */}
               <View style={styles.dividerRow}>
                 <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>
-                  or add manually
-                </Text>
+                <Text style={styles.dividerText}>or add manually</Text>
                 <View style={styles.dividerLine} />
               </View>
 
@@ -377,45 +396,35 @@ export default function AddAssignmentModal({
               <TextInput
                 style={styles.input}
                 placeholder="e.g., Homework 3 – Dynamic Programming"
-                placeholderTextColor={
-                  colors.textSecondary + "99"
-                }
+                placeholderTextColor={colors.textSecondary + "99"}
                 value={title}
                 onChangeText={setTitle}
               />
 
-              <Text style={styles.label}>
-                Class
-              </Text>
+              <Text style={styles.label}>Class</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g., CS 370 – Algorithms"
-                placeholderTextColor={
-                  colors.textSecondary + "99"
-                }
+                placeholderTextColor={colors.textSecondary + "99"}
                 value={course}
                 onChangeText={setCourse}
               />
 
-              <Text style={styles.label}>
-                Assignment type
-              </Text>
+              <Text style={styles.label}>Assignment type</Text>
               <View style={styles.typeRow}>
                 {TYPE_OPTIONS.map((t) => (
                   <TouchableOpacity
                     key={t}
                     style={[
                       styles.typeChip,
-                      type === t &&
-                        styles.typeChipActive,
+                      type === t && styles.typeChipActive,
                     ]}
                     onPress={() => setType(t)}
                   >
                     <Text
                       style={[
                         styles.typeChipText,
-                        type === t &&
-                          styles.typeChipTextActive,
+                        type === t && styles.typeChipTextActive,
                       ]}
                     >
                       {t}
@@ -425,158 +434,209 @@ export default function AddAssignmentModal({
               </View>
 
               <View style={styles.row}>
-                <View
-                  style={{ flex: 1, marginRight: 6 }}
-                >
-                  <Text style={styles.label}>
-                    Due date
-                  </Text>
+                <View style={{ flex: 1, marginRight: 6 }}>
+                  <Text style={styles.label}>Due date</Text>
                   <TouchableOpacity
                     style={styles.pickerButton}
-                    onPress={() =>
-                      setShowDatePicker(true)
-                    }
+                    onPress={() => setShowDatePicker(true)}
                   >
                     <Text
-                      style={
-                        styles.pickerButtonText
-                      }
+                      style={[
+                        styles.pickerButtonText,
+                        !hasPickedDate && {
+                          color: colors.textSecondary,
+                          fontWeight: "400",
+                        },
+                      ]}
                     >
                       {formattedDate}
                     </Text>
                   </TouchableOpacity>
                 </View>
-                <View
-                  style={{ flex: 1, marginLeft: 6 }}
-                >
-                  <Text style={styles.label}>
-                    Due time
-                  </Text>
+                <View style={{ flex: 1, marginLeft: 6 }}>
+                  <Text style={styles.label}>Due time</Text>
                   <TouchableOpacity
                     style={styles.pickerButton}
-                    onPress={() =>
-                      setShowTimePicker(true)
-                    }
+                    onPress={() => setShowTimePicker(true)}
                   >
-                    <Text
-                      style={
-                        styles.pickerButtonText
-                      }
-                    >
+                    <Text style={styles.pickerButtonText}>
                       {formattedTime}
                     </Text>
                   </TouchableOpacity>
                 </View>
               </View>
 
-              {showDatePicker && (
-                <DateTimePicker
-                  value={date}
-                  mode="date"
-                  display={
-                    Platform.OS === "ios"
-                      ? "spinner"
-                      : "default"
-                  }
-                  onChange={(
-                    _event: DateTimePickerEvent,
-                    selected?: Date
-                  ) => {
-                    if (Platform.OS !== "ios") {
-                      setShowDatePicker(false);
-                    }
-                    if (!selected) return;
-                    setDate(selected);
-                  }}
-                />
-              )}
-
-              {showTimePicker && (
-                <DateTimePicker
-                  value={time}
-                  mode="time"
-                  display={
-                    Platform.OS === "ios"
-                      ? "spinner"
-                      : "default"
-                  }
-                  onChange={(
-                    _event: DateTimePickerEvent,
-                    selected?: Date
-                  ) => {
-                    if (Platform.OS !== "ios") {
-                      setShowTimePicker(false);
-                    }
-                    if (!selected) return;
-                    setTime(selected);
-                  }}
-                />
-              )}
-
-              <Text style={styles.label}>
-                Description (optional)
-              </Text>
+              <Text style={styles.label}>Description (optional)</Text>
               <TextInput
                 style={[styles.input, { height: 80 }]}
                 placeholder="Notes or details…"
-                placeholderTextColor={
-                  colors.textSecondary + "99"
-                }
+                placeholderTextColor={colors.textSecondary + "99"}
                 multiline
                 textAlignVertical="top"
                 value={description}
                 onChangeText={setDescription}
               />
+
+              {/* Fallback inline extracted editor (only used if onDraftsExtracted not given) */}
+              {hasExtractedDrafts && !onDraftsExtracted && (
+                <View style={{ marginTop: 16 }}>
+                  <Text style={styles.label}>Extracted assignments</Text>
+                  {drafts.map((d) => (
+                    <View key={d.id} style={styles.card}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.cardLabel}>Title</Text>
+                        <TouchableOpacity
+                          onPress={() => deleteDraft(d.id)}
+                        >
+                          <Trash2
+                            size={18}
+                            color={colors.textSecondary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                      <TextInput
+                        style={styles.input}
+                        value={d.title}
+                        onChangeText={(txt) =>
+                          updateDraft(d.id, "title", txt)
+                        }
+                        placeholder="Assignment title"
+                        placeholderTextColor={
+                          colors.textSecondary + "99"
+                        }
+                      />
+
+                      <Text style={styles.cardLabel}>Class</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={d.course}
+                        onChangeText={(txt) =>
+                          updateDraft(d.id, "course", txt)
+                        }
+                        placeholder="e.g., CS 370"
+                        placeholderTextColor={
+                          colors.textSecondary + "99"
+                        }
+                      />
+
+                      <Text style={styles.cardLabel}>
+                        Due date (YYYY-MM-DD)
+                      </Text>
+                      <TextInput
+                        style={styles.input}
+                        value={d.dueISO || ""}
+                        onChangeText={(txt) =>
+                          updateDraft(d.id, "dueISO", txt)
+                        }
+                        placeholder="2025-02-03"
+                        placeholderTextColor={
+                          colors.textSecondary + "99"
+                        }
+                      />
+
+                      <Text style={styles.cardLabel}>
+                        Description (optional)
+                      </Text>
+                      <TextInput
+                        style={[styles.input, { height: 70 }]}
+                        value={d.description || ""}
+                        onChangeText={(txt) =>
+                          updateDraft(d.id, "description", txt)
+                        }
+                        placeholder="Notes…"
+                        multiline
+                        textAlignVertical="top"
+                        placeholderTextColor={
+                          colors.textSecondary + "99"
+                        }
+                      />
+                    </View>
+                  ))}
+                </View>
+              )}
             </ScrollView>
 
             {/* Actions */}
             <View style={styles.actionsRow}>
               <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  styles.cancelBtn,
-                ]}
+                style={[styles.actionBtn, styles.cancelBtn]}
                 onPress={closeAll}
                 disabled={parsing}
               >
-                <Text style={styles.cancelText}>
-                  Cancel
-                </Text>
+                <Text style={styles.cancelText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  styles.primaryBtn,
-                ]}
-                onPress={handleSaveManual}
+                style={[styles.actionBtn, styles.primaryBtn]}
+                onPress={
+                  hasExtractedDrafts && !onDraftsExtracted
+                    ? handleSaveExtractedInline
+                    : handleSaveManual
+                }
                 disabled={parsing}
               >
                 <Text style={styles.primaryText}>
-                  Save assignment
+                  {hasExtractedDrafts && !onDraftsExtracted
+                    ? "Save extracted"
+                    : "Save assignment"}
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
 
-      {/* Separate popup to review image-extracted assignments */}
-      <DraftEditorModal
-        visible={editorVisible}
-        initialDrafts={imageDrafts}
-        onClose={() => setEditorVisible(false)}
-        onSave={(drafts) => {
-          const cleaned = drafts.map((d) => ({
-            ...d,
-            dueISO: safeISO(d.dueISO || null),
-          }));
-          addAssignmentsFromDrafts(cleaned);
-          setEditorVisible(false);
-          closeAll();
-        }}
-      />
-    </>
+          {/* iOS bottom sheet for pickers with Done button */}
+          {Platform.OS === "ios" && (showDatePicker || showTimePicker) && (
+            <View style={styles.iosPickerSheet}>
+              <View style={styles.iosPickerToolbar}>
+                <TouchableOpacity onPress={hidePickers}>
+                  <Text style={styles.iosPickerDoneText}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={date || new Date()}
+                  mode="date"
+                  display="spinner"
+                  themeVariant="light"
+                  onChange={onChangeDate}
+                  style={{ alignSelf: "stretch" }}
+                />
+              )}
+              {showTimePicker && (
+                <DateTimePicker
+                  value={time}
+                  mode="time"
+                  display="spinner"
+                  themeVariant="light"
+                  onChange={onChangeTime}
+                  style={{ alignSelf: "stretch" }}
+                />
+              )}
+            </View>
+          )}
+
+          {/* Android inline dialogs (they render as native modal pickers) */}
+          {Platform.OS !== "ios" && showDatePicker && (
+            <DateTimePicker
+              value={date || new Date()}
+              mode="date"
+              display="default"
+              themeVariant="light"
+              onChange={onChangeDate}
+            />
+          )}
+          {Platform.OS !== "ios" && showTimePicker && (
+            <DateTimePicker
+              value={time}
+              mode="time"
+              display="default"
+              themeVariant="light"
+              onChange={onChangeTime}
+            />
+          )}
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
   );
 }
 
@@ -715,5 +775,47 @@ const styles = StyleSheet.create({
   primaryText: {
     color: "#fff",
     fontWeight: "800",
+  },
+  card: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: "#F9FAFB",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  cardLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textSecondary,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  iosPickerSheet: {
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
+    marginTop: 8,
+    borderRadius: 16,
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+  iosPickerToolbar: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E5E7EB",
+  },
+  iosPickerDoneText: {
+    fontWeight: "700",
+    color: colors.blue,
   },
 });

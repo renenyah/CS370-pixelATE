@@ -1,14 +1,13 @@
 // app/classes.tsx
-import React, {
-  useMemo,
-  useState,
-} from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Modal,
+  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 
@@ -26,12 +25,21 @@ type FolderView = {
   assignmentCount: number;
 };
 
+const SEMESTER_CHOICES = ["Spring", "Summer", "Fall"] as const;
+
 export default function ClassesScreen() {
   const router = useRouter();
-  const { assignments, classes } = useAssignments();
+  const { assignments, classes, updateClassFolder } = useAssignments();
 
   const [semesterFilter, setSemesterFilter] =
     useState<string>("All");
+
+  // edit modal state
+  const [editVisible, setEditVisible] = useState(false);
+  const [editingOriginalName, setEditingOriginalName] = useState<string>("");
+  const [editName, setEditName] = useState<string>("");
+  const [editSemester, setEditSemester] = useState<string>("Fall");
+  const [editYear, setEditYear] = useState<string>("");
 
   const folders: FolderView[] = useMemo(() => {
     const map = new Map<string, FolderView>();
@@ -64,9 +72,7 @@ export default function ClassesScreen() {
       } else {
         map.set(a.course, {
           name: a.course,
-          color:
-            a.color ||
-            colors.lavender /* fallback */,
+          color: a.color || colors.lavender,
           semester: a.semester,
           year: a.year,
           assignmentCount: 1,
@@ -95,10 +101,36 @@ export default function ClassesScreen() {
       (f) =>
         f.semester &&
         f.year &&
-        `${f.semester} ${f.year}` ===
-          semesterFilter
+        `${f.semester} ${f.year}` === semesterFilter
     );
   }, [folders, semesterFilter]);
+
+  // ---- edit helpers ----
+  const openEditModalForFolder = (f: FolderView) => {
+    setEditingOriginalName(f.name);
+    setEditName(f.name);
+    setEditSemester(f.semester || "Fall");
+    setEditYear(
+      f.year ? String(f.year) : String(new Date().getFullYear())
+    );
+    setEditVisible(true);
+  };
+
+  const closeEditModal = () => {
+    setEditVisible(false);
+  };
+
+  const handleSaveEdit = () => {
+    const newName = editName.trim() || editingOriginalName;
+    const yrNum = parseInt(editYear, 10);
+    updateClassFolder({
+      oldName: editingOriginalName,
+      newName,
+      semester: editSemester,
+      year: Number.isNaN(yrNum) ? undefined : yrNum,
+    });
+    setEditVisible(false);
+  };
 
   return (
     <View style={styles.screen}>
@@ -109,8 +141,7 @@ export default function ClassesScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Classes</Text>
           <Text style={styles.sub}>
-            View all your class folders and the
-            assignments inside them.
+            View all your class folders and the assignments inside them.
           </Text>
         </View>
 
@@ -131,9 +162,7 @@ export default function ClassesScreen() {
                 key={opt}
                 label={opt}
                 active={semesterFilter === opt}
-                onPress={() =>
-                  setSemesterFilter(opt)
-                }
+                onPress={() => setSemesterFilter(opt)}
               />
             ))}
           </ScrollView>
@@ -141,12 +170,9 @@ export default function ClassesScreen() {
 
         {filteredFolders.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>
-              No classes yet
-            </Text>
+            <Text style={styles.emptyTitle}>No classes yet</Text>
             <Text style={styles.emptySub}>
-              Use the + button to add a class
-              folder or upload a syllabus.
+              Use the + button to add a class folder or upload a syllabus.
             </Text>
           </View>
         ) : (
@@ -163,8 +189,7 @@ export default function ClassesScreen() {
                   style={[
                     styles.folderCard,
                     {
-                      borderColor:
-                        f.color || colors.lavender,
+                      borderColor: f.color || colors.lavender,
                     },
                   ]}
                 >
@@ -172,46 +197,46 @@ export default function ClassesScreen() {
                     style={[
                       styles.colorBar,
                       {
-                        backgroundColor:
-                          f.color || colors.lavender,
+                        backgroundColor: f.color || colors.lavender,
                       },
                     ]}
                   />
                   <View style={styles.folderBody}>
-                    <Text style={styles.folderName}>
-                      {f.name}
-                    </Text>
+                    <Text style={styles.folderName}>{f.name}</Text>
                     {semesterLabel && (
-                      <Text
-                        style={styles.folderMeta}
-                      >
+                      <Text style={styles.folderMeta}>
                         {semesterLabel}
                       </Text>
                     )}
-                    <Text
-                      style={styles.folderMeta}
-                    >{`${f.assignmentCount} assignment${
-                      f.assignmentCount === 1
-                        ? ""
-                        : "s"
-                    }`}</Text>
+                    <Text style={styles.folderMeta}>
+                      {`${f.assignmentCount} assignment${
+                        f.assignmentCount === 1 ? "" : "s"
+                      }`}
+                    </Text>
 
                     <View style={styles.folderActions}>
+                      {/* 🔹 NEW: Edit button (keeps layout, just adds another pill) */}
+                      <TouchableOpacity
+                        style={styles.editButton}
+                        onPress={() => openEditModalForFolder(f)}
+                      >
+                        <Text style={styles.editButtonText}>
+                          Edit
+                        </Text>
+                      </TouchableOpacity>
+
                       <TouchableOpacity
                         style={styles.viewButton}
                         onPress={() =>
                           router.push({
-                            pathname:
-                              "/classes/[course]",
+                            pathname: "/classes/[course]",
                             params: {
                               course: f.name,
                             },
                           })
                         }
                       >
-                        <Text
-                          style={styles.viewButtonText}
-                        >
+                        <Text style={styles.viewButtonText}>
                           View
                         </Text>
                       </TouchableOpacity>
@@ -223,6 +248,84 @@ export default function ClassesScreen() {
           </View>
         )}
       </ScrollView>
+
+      {/* 🔹 Edit Class Modal */}
+      <Modal
+        visible={editVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeEditModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Edit class</Text>
+
+            <Text style={styles.modalLabel}>Class name</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="e.g., CS 370 – Algorithms"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <Text style={styles.modalLabel}>Semester</Text>
+            <View style={styles.semesterRow}>
+              {SEMESTER_CHOICES.map((sem) => {
+                const active = editSemester === sem;
+                return (
+                  <TouchableOpacity
+                    key={sem}
+                    style={[
+                      styles.semChip,
+                      active && styles.semChipActive,
+                    ]}
+                    onPress={() => setEditSemester(sem)}
+                  >
+                    <Text
+                      style={[
+                        styles.semChipText,
+                        active && styles.semChipTextActive,
+                      ]}
+                    >
+                      {sem}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.modalLabel}>Year</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editYear}
+              onChangeText={setEditYear}
+              placeholder="2025"
+              keyboardType="numeric"
+              placeholderTextColor="#9CA3AF"
+            />
+
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancel]}
+                onPress={closeEditModal}
+              >
+                <Text style={styles.modalCancelText}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalSave]}
+                onPress={handleSaveEdit}
+              >
+                <Text style={styles.modalSaveText}>
+                  Save
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -345,6 +448,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
     flexDirection: "row",
     justifyContent: "flex-end",
+    gap: 8,
   },
   viewButton: {
     paddingHorizontal: 14,
@@ -356,5 +460,106 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#4F46E5",
+  },
+  // 🔹 NEW styles for edit button + modal
+  editButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+  },
+  editButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4B5563",
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 10,
+  },
+  modalLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4B5563",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  modalInput: {
+    backgroundColor: "#F9FAFB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#111827",
+  },
+  semesterRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  semChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    backgroundColor: "#FFFFFF",
+  },
+  semChipActive: {
+    backgroundColor: "#7C3AED",
+    borderColor: "#7C3AED",
+  },
+  semChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#111827",
+  },
+  semChipTextActive: {
+    color: "#FFFFFF",
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 10,
+    marginTop: 14,
+  },
+  modalBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCancel: {
+    backgroundColor: "#E5E7EB",
+  },
+  modalSave: {
+    backgroundColor: "#7C3AED",
+  },
+  modalCancelText: {
+    color: "#111827",
+    fontWeight: "700",
+  },
+  modalSaveText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 });

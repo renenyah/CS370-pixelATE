@@ -31,6 +31,7 @@ const TYPE_OPTIONS: AssignmentType[] = [
   "Reading",
   "Discussion",
   "Art",
+  "Presentation",
   "Other",
 ];
 

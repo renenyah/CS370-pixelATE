@@ -55,6 +55,12 @@
         "projectId": "89f38c65-12c0-445c-85e4-919624daff2f"
       }
     },
-    "owner": "kultum"
+    "owner": "kultum",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/89f38c65-12c0-445c-85e4-919624daff2f"
+    }
   }
 }

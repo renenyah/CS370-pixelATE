@@ -9,12 +9,13 @@ import {
   TextInput,
   Alert,
   ScrollView,
+  Platform,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { X, Wand2, FileText, Trash2 } from "lucide-react-native";
 
 import { colors } from "../constant/colors";
-import { buildUrl } from "../constant/api";
+import { API_BASE } from "../constant/api";
 import {
   Draft,
   safeISO,
@@ -220,18 +221,39 @@ export default function UploadSyllabusModal({
     setDrafts((prev) => [...prev, d]);
   };
 
-  // ------------ PDF ------------
-  const handlePickPdf = useCallback(async () => {
-    const res = await DocumentPicker.getDocumentAsync({
-      type: ["application/pdf"],
-      copyToCacheDirectory: true,
-    });
-    if (res.canceled || !res.assets?.[0]) return;
+// ------------ PDF ------------
+const handlePickPdf = useCallback(async () => {
+  const res = await DocumentPicker.getDocumentAsync({
+    type: ["application/pdf"],
+    copyToCacheDirectory: true,
+  });
+  if (res.canceled || !res.assets?.[0]) return;
 
-    const asset = res.assets[0];
-    setParsing(true);
-    try {
-      const fd = new FormData();
+  const asset = res.assets[0];
+  setParsing(true);
+
+  try {
+    const fd = new FormData();
+
+    if (Platform.OS === "web") {
+      // 🔹 On web we need a real File/Blob, not { uri, name, type }
+      const existingFile = (asset as any).file as File | undefined;
+
+      let file: File;
+      if (existingFile) {
+        file = existingFile;
+      } else {
+        const blob = await fetch(asset.uri).then((r) => r.blob());
+        file = new File(
+          [blob],
+          asset.name || `syllabus_${Date.now()}.pdf`,
+          { type: asset.mimeType || "application/pdf" }
+        );
+      }
+
+      fd.append("file", file);
+    } else {
+      // 🔹 Native (iOS/Android) – keep the RN-style object
       fd.append(
         "file",
         {
@@ -240,66 +262,50 @@ export default function UploadSyllabusModal({
           type: asset.mimeType || "application/pdf",
         } as any
       );
-
-      const url = buildUrl(
-        `/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`
-      );
-      console.log("PDF →", url);
-
-      const resp = await fetchWithTimeout(url, {
-        method: "POST",
-        body: fd,
-      });
-
-      if (!resp.ok) {
-        console.log(
-          "PDF resp not ok:",
-          resp.status,
-          resp.statusText
-        );
-        return handleBackendError(
-          `HTTP ${resp.status} – ${resp.statusText}`
-        );
-      }
-
-      let json: ApiResponse | any;
-      try {
-        json = (await resp.json()) as ApiResponse;
-      } catch (e: any) {
-        console.log("PDF JSON parse error:", e);
-        return handleBackendError(
-          "Could not parse server response."
-        );
-      }
-
-      console.log("PDF resp →", JSON.stringify(json));
-
-      // If backend sends a detected course_name, keep it for manual additions
-      if (json.course_name && !courseName) {
-        setCourseName(json.course_name);
-      }
-
-      const items = Array.isArray(json?.items)
-        ? json.items
-        : Array.isArray(json)
-        ? json
-        : [];
-
-      makeDraftsFromItems(items);
-    } catch (e: any) {
-      console.log("PDF parse error:", e);
-      if (e?.message === "Request timed out") {
-        Alert.alert(
-          "Timeout",
-          "The server took too long to respond. It might be sleeping or offline."
-        );
-      } else {
-        Alert.alert("Error", String(e?.message || e));
-      }
-    } finally {
-      setParsing(false);
     }
-  }, [aiRepair, courseName, semester, year, folderColor]);
+
+    const base = API_BASE.replace(/\/$/, "");
+    const url = `${base}/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`;
+    console.log("PDF →", url);
+
+    const resp = await fetch(url, {
+      method: "POST",
+      body: fd,
+    });
+
+    if (!resp.ok) {
+      console.log("PDF resp not ok:", resp.status, resp.statusText);
+      return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
+    }
+
+    let json: ApiResponse | any;
+    try {
+      json = (await resp.json()) as ApiResponse;
+    } catch (e: any) {
+      console.log("PDF JSON parse error:", e);
+      return handleBackendError("Could not parse server response.");
+    }
+
+    console.log("PDF resp →", JSON.stringify(json));
+
+    if (json.course_name && !courseName) {
+      setCourseName(json.course_name);
+    }
+
+    const items = Array.isArray(json?.items)
+      ? json.items
+      : Array.isArray(json)
+      ? json
+      : [];
+
+    makeDraftsFromItems(items);
+  } catch (e: any) {
+    console.log("PDF parse error:", e);
+    Alert.alert("Error", String(e?.message || e));
+  } finally {
+    setParsing(false);
+  }
+}, [aiRepair, courseName, semester, year, folderColor]);
 
   // ------------ TEXT ------------
   const handleParseText = useCallback(async () => {

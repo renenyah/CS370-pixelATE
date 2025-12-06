@@ -74,8 +74,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({
 
     // ------------ SIGN UP ------------
     signUp: async (email, password, fullName) => {
-      // Hardcode the Expo Go URL for now (change this IP if your dev server IP changes)
-      const redirectUrl = "exp://10.44.163.76:8081/";
+      // removed hardcoded IP address
+      const redirectUrl = process.env.EXPO_PUBLIC_REDIRECT_URL || "exp://localhost:8081/";
       
       const { data, error } = await supabase.auth.signUp({
         email,

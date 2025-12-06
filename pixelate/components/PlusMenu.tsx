@@ -43,14 +43,9 @@ export default function PlusMenu({
             <View style={styles.card}>
               {/* Header row */}
               <View style={styles.headerRow}>
-                <Text style={styles.title}>
-                  Quick actions
-                </Text>
+                <Text style={styles.title}>Quick actions</Text>
                 <TouchableOpacity onPress={onClose}>
-                  <X
-                    size={20}
-                    color={colors.textSecondary}
-                  />
+                  <X size={20} color={colors.textSecondary} />
                 </TouchableOpacity>
               </View>
 
@@ -69,7 +64,10 @@ export default function PlusMenu({
                   }
                   label="Upload syllabus"
                   description="Parse a PDF or image to auto-add assignments."
-                  onPress={onUploadSyllabus}
+                  onPress={() => {
+                    onClose();
+                    onUploadSyllabus();
+                  }}
                 />
 
                 <MenuItem
@@ -81,7 +79,10 @@ export default function PlusMenu({
                   }
                   label="Add class folder"
                   description="Create a new class and color folder."
-                  onPress={onAddClass}
+                  onPress={() => {
+                    onClose();
+                    onAddClass();
+                  }}
                 />
 
                 <MenuItem
@@ -93,7 +94,10 @@ export default function PlusMenu({
                   }
                   label="Add assignment"
                   description="Add a single assignment or from an image."
-                  onPress={onAddAssignment}
+                  onPress={() => {
+                    onClose();
+                    onAddAssignment();
+                  }}
                 />
               </View>
             </View>

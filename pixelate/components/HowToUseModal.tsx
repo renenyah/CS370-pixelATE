@@ -1,110 +1,205 @@
-// components/HowToUseModal.tsx
+// components/PlusMenu.tsx
 import React from "react";
 import {
-  Modal,
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
+  TouchableOpacity,
+  Modal,
+  TouchableWithoutFeedback,
 } from "react-native";
+import {
+  FileText,
+  FolderPlus,
+  PlusCircle,
+  X,
+} from "lucide-react-native";
 import { colors } from "../constant/colors";
 
 type Props = {
-  visible: boolean;
   onClose: () => void;
+  onUploadSyllabus: () => void;
+  onAddClass: () => void;
+  onAddAssignment: () => void;
 };
 
-export default function HowToUseModal({ visible, onClose }: Props) {
+export default function PlusMenu({
+  onClose,
+  onUploadSyllabus,
+  onAddClass,
+  onAddAssignment,
+}: Props) {
   return (
     <Modal
-      visible={visible}
       transparent
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.card}>
-          <Text style={styles.title}>Welcome to PixelATE 📚</Text>
-          <Text style={styles.subtitle}>
-            Here’s how to get started:
-          </Text>
+      {/* Dim background */}
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={styles.overlay}>
+          {/* Stop touch from propagating when pressing inside card */}
+          <TouchableWithoutFeedback>
+            <View style={styles.card}>
+              {/* Header row */}
+              <View style={styles.headerRow}>
+                <Text style={styles.title}>Quick actions</Text>
+                <TouchableOpacity onPress={onClose}>
+                  <X size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
 
-          <View style={styles.bulletRow}>
-            <Text style={styles.bulletDot}>•</Text>
-            <Text style={styles.bulletText}>
-              Tap the <Text style={{ fontWeight: "700" }}>+</Text> button to upload a syllabus (PDF, image, or pasted text).
-            </Text>
-          </View>
-          <View style={styles.bulletRow}>
-            <Text style={styles.bulletDot}>•</Text>
-            <Text style={styles.bulletText}>
-              Choose the <Text style={{ fontWeight: "700" }}>class, semester, and color</Text> so your folder stays organized.
-            </Text>
-          </View>
-          <View style={styles.bulletRow}>
-            <Text style={styles.bulletDot}>•</Text>
-            <Text style={styles.bulletText}>
-              Use <Text style={{ fontWeight: "700" }}>Classes</Text> to see folders and{" "}
-              <Text style={{ fontWeight: "700" }}>Calendar</Text> to see everything by date.
-            </Text>
-          </View>
+              <Text style={styles.subtitle}>
+                Choose how you want to add your assignments.
+              </Text>
 
-          <TouchableOpacity style={styles.button} onPress={onClose}>
-            <Text style={styles.buttonText}>Got it, let’s go!</Text>
-          </TouchableOpacity>
+              {/* Options */}
+              <View style={styles.options}>
+                <MenuItem
+                  icon={
+                    <FileText
+                      size={20}
+                      color={colors.lavender}
+                    />
+                  }
+                  label="Upload syllabus"
+                  description="Parse a PDF or image to auto-add assignments."
+                  onPress={() => {
+                    onClose();
+                    onUploadSyllabus();
+                  }}
+                />
+
+                <MenuItem
+                  icon={
+                    <FolderPlus
+                      size={20}
+                      color={colors.blue}
+                    />
+                  }
+                  label="Add class folder"
+                  description="Create a new class and color folder."
+                  onPress={() => {
+                    onClose();
+                    onAddClass();
+                  }}
+                />
+
+                <MenuItem
+                  icon={
+                    <PlusCircle
+                      size={20}
+                      color={colors.pink}
+                    />
+                  }
+                  label="Add assignment"
+                  description="Add a single assignment or from an image."
+                  onPress={() => {
+                    onClose();
+                    onAddAssignment();
+                  }}
+                />
+              </View>
+            </View>
+          </TouchableWithoutFeedback>
         </View>
-      </View>
+      </TouchableWithoutFeedback>
     </Modal>
+  );
+}
+
+type MenuItemProps = {
+  icon: React.ReactNode;
+  label: string;
+  description: string;
+  onPress: () => void;
+};
+
+function MenuItem({
+  icon,
+  label,
+  description,
+  onPress,
+}: MenuItemProps) {
+  return (
+    <TouchableOpacity
+      style={styles.item}
+      activeOpacity={0.9}
+      onPress={onPress}
+    >
+      <View style={styles.iconWrap}>{icon}</View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.itemLabel}>{label}</Text>
+        <Text style={styles.itemDesc}>{description}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(15,23,42,0.45)",
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
+    paddingHorizontal: 24,
   },
   card: {
     width: "100%",
-    maxWidth: 420,
-    backgroundColor: colors.cardBackground,
+    maxWidth: 360,
+    backgroundColor: "#FFFFFF",
     borderRadius: 20,
-    padding: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    shadowColor: "#000",
+    shadowOpacity: 0.16,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
   },
   title: {
-    fontSize: 20,
-    fontWeight: "800",
+    fontSize: 16,
+    fontWeight: "700",
     color: colors.textPrimary,
   },
   subtitle: {
-    marginTop: 4,
+    fontSize: 12,
     color: colors.textSecondary,
     marginBottom: 10,
   },
-  bulletRow: {
+  options: {
+    marginTop: 4,
+    gap: 6,
+  },
+  item: {
     flexDirection: "row",
-    marginBottom: 6,
-  },
-  bulletDot: {
-    marginRight: 8,
-    color: colors.textPrimary,
-    fontSize: 16,
-  },
-  bulletText: {
-    flex: 1,
-    color: colors.textSecondary,
-  },
-  button: {
-    marginTop: 14,
-    backgroundColor: colors.lavender,
-    borderRadius: 12,
-    paddingVertical: 10,
     alignItems: "center",
+    paddingVertical: 8,
+    borderRadius: 14,
   },
-  buttonText: {
-    color: "#fff",
-    fontWeight: "800",
+  iconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  itemLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: colors.textPrimary,
+  },
+  itemDesc: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
 });

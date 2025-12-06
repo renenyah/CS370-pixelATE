@@ -39,6 +39,62 @@ function nextDraftId(): string {
   return `d_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * Split a due string into separate date + time parts.
+ * Supports:
+ *  - "MM/DD/YYYY"
+ *  - "MM/DD/YYYY HH:MM"
+ *  - "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM"
+ */
+function splitDueString(
+  due?: string | null
+): { date: string; time: string } {
+  if (!due) return { date: "", time: "" };
+  const trimmed = due.trim();
+
+  // MM/DD/YYYY [HH:MM]
+  const m1 = trimmed.match(
+    /^(\d{1,2}\/\d{1,2}\/\d{2,4})(?:\s+(\d{1,2}:\d{2}))?$/
+  );
+  if (m1) {
+    return {
+      date: m1[1],
+      time: m1[2] || "",
+    };
+  }
+
+  // ISO: YYYY-MM-DD[ T HH:MM]
+  const m2 = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})(?:[T\s](\d{2}:\d{2}))?$/
+  );
+  if (m2) {
+    const isoDate = m2[1]; // YYYY-MM-DD
+    const [y, mo, d] = isoDate.split("-");
+    // Show as MM/DD/YY
+    const prettyDate = `${Number(mo)}/${Number(d)}/${y.slice(2)}`;
+    return {
+      date: prettyDate,
+      time: m2[2] || "",
+    };
+  }
+
+  // Fallback: split by whitespace into date + time
+  const [date, time] = trimmed.split(/\s+/, 2);
+  return {
+    date: date || "",
+    time: time || "",
+  };
+}
+
+/** Join date + time strings into a single field stored as dueISO on the draft. */
+function combineDueStrings(date: string, time: string): string {
+  const d = date.trim();
+  const t = time.trim();
+  if (!d && !t) return "";
+  if (!t) return d;
+  return `${d} ${t}`; // e.g. "11/24/25 23:59"
+}
+
 export default function DraftEditorModal({
   visible,
   initialDrafts,
@@ -76,6 +132,15 @@ export default function DraftEditorModal({
         d.id === id ? { ...d, [field]: value } : d
       )
     );
+  };
+
+  const updateDraftDue = (
+    id: string,
+    newDate: string,
+    newTime: string
+  ) => {
+    const combined = combineDueStrings(newDate, newTime);
+    updateDraftField(id, "dueISO", combined || null);
   };
 
   const handleDeleteDraft = (id: string) => {
@@ -139,117 +204,132 @@ export default function DraftEditorModal({
             style={{ maxHeight: 420 }}
             contentContainerStyle={{ paddingBottom: 8 }}
           >
-            {drafts.map((d) => (
-              <View key={d.id} style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardLabel}>
-                    Assignment title
-                  </Text>
-                  {drafts.length > 1 && (
-                    <TouchableOpacity
-                      onPress={() => handleDeleteDraft(d.id)}
-                    >
-                      <Trash2
-                        size={18}
-                        color={colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                <TextInput
-                  style={styles.input}
-                  value={d.title}
-                  onChangeText={(t) =>
-                    updateDraftField(d.id, "title", t)
-                  }
-                  placeholder="Assignment title"
-                  placeholderTextColor={
-                    colors.textSecondary + "99"
-                  }
-                />
-
-                <Text style={styles.cardLabel}>Class name</Text>
-                <TextInput
-                  style={styles.input}
-                  value={d.course}
-                  onChangeText={(t) =>
-                    updateDraftField(d.id, "course", t)
-                  }
-                  placeholder="e.g., CS 370 – Algorithms"
-                  placeholderTextColor={
-                    colors.textSecondary + "99"
-                  }
-                />
-
-                <Text style={styles.cardLabel}>
-                  Due date (YYYY-MM-DD)
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={d.dueISO || ""}
-                  onChangeText={(t) =>
-                    updateDraftField(d.id, "dueISO", t)
-                  }
-                  placeholder="2025-02-03"
-                  placeholderTextColor={
-                    colors.textSecondary + "99"
-                  }
-                />
-
-                <Text style={styles.cardLabel}>
-                  Assignment type
-                </Text>
-                <View style={styles.typeRow}>
-                  {TYPE_OPTIONS.map((opt) => {
-                    const active = d.type === opt;
-                    return (
+            {drafts.map((d) => {
+              const { date, time } = splitDueString(d.dueISO || "");
+              return (
+                <View key={d.id} style={styles.card}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.cardLabel}>
+                      Assignment title
+                    </Text>
+                    {drafts.length > 1 && (
                       <TouchableOpacity
-                        key={opt}
-                        onPress={() =>
-                          updateDraftField(d.id, "type", opt)
-                        }
-                        style={[
-                          styles.typeChip,
-                          active && styles.typeChipActive,
-                        ]}
+                        onPress={() => handleDeleteDraft(d.id)}
                       >
-                        <Text
+                        <Trash2
+                          size={18}
+                          color={colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <TextInput
+                    style={styles.input}
+                    value={d.title}
+                    onChangeText={(t) =>
+                      updateDraftField(d.id, "title", t)
+                    }
+                    placeholder="Assignment title"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  <Text style={styles.cardLabel}>Class name</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={d.course}
+                    onChangeText={(t) =>
+                      updateDraftField(d.id, "course", t)
+                    }
+                    placeholder="e.g., CS 370 – Algorithms"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  {/* NEW: date + time editing, like AddAssignmentModal */}
+                  <Text style={styles.cardLabel}>
+                    Due date (MM/DD/YY or MM/DD/YYYY)
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={date}
+                    onChangeText={(t) =>
+                      updateDraftDue(d.id, t, time)
+                    }
+                    placeholder="11/24/25"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  <Text style={styles.cardLabel}>
+                    Due time (HH:MM — optional)
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={time}
+                    onChangeText={(t) =>
+                      updateDraftDue(d.id, date, t)
+                    }
+                    placeholder="11:59"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+
+                  <Text style={styles.cardLabel}>
+                    Assignment type
+                  </Text>
+                  <View style={styles.typeRow}>
+                    {TYPE_OPTIONS.map((opt) => {
+                      const active = d.type === opt;
+                      return (
+                        <TouchableOpacity
+                          key={opt}
+                          onPress={() =>
+                            updateDraftField(d.id, "type", opt)
+                          }
                           style={[
-                            styles.typeChipText,
-                            active &&
-                              styles.typeChipTextActive,
+                            styles.typeChip,
+                            active && styles.typeChipActive,
                           ]}
                         >
-                          {opt}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                          <Text
+                            style={[
+                              styles.typeChipText,
+                              active &&
+                                styles.typeChipTextActive,
+                            ]}
+                          >
+                            {opt}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
 
-                <Text style={styles.cardLabel}>
-                  Description (optional)
-                </Text>
-                <TextInput
-                  style={[styles.input, { height: 70 }]}
-                  multiline
-                  textAlignVertical="top"
-                  value={d.description || ""}
-                  onChangeText={(t) =>
-                    updateDraftField(
-                      d.id,
-                      "description",
-                      t
-                    )
-                  }
-                  placeholder="Notes or details…"
-                  placeholderTextColor={
-                    colors.textSecondary + "99"
-                  }
-                />
-              </View>
-            ))}
+                  <Text style={styles.cardLabel}>
+                    Description (optional)
+                  </Text>
+                  <TextInput
+                    style={[styles.input, { height: 70 }]}
+                    multiline
+                    textAlignVertical="top"
+                    value={d.description || ""}
+                    onChangeText={(t) =>
+                      updateDraftField(d.id, "description", t)
+                    }
+                    placeholder="Notes or details…"
+                    placeholderTextColor={
+                      colors.textSecondary + "99"
+                    }
+                  />
+                </View>
+              );
+            })}
 
             <TouchableOpacity
               style={styles.addRowButton}

@@ -19,7 +19,7 @@ import { colors } from "../constant/colors";
 
 type Props = {
   title: string;
-  dueDate: string; // display string, e.g. "12/6/2025"
+  dueDate: string; // display string, e.g. "12/6/2025" or ISO-ish
   course: string;
   enableImageImport?: boolean;
 };
@@ -37,7 +37,6 @@ type OcrResponse = {
   items?: OcrItem[];
 };
 
-// Match Draft["type"]
 const ASSIGNMENT_TYPES: Draft["type"][] = [
   "Assignment",
   "Quiz",
@@ -57,9 +56,12 @@ function nextDraftId(): string {
   return `img_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Split stored due string into date + time text boxes
 function splitDue(due?: string | null): { date: string; time: string } {
   if (!due) return { date: "", time: "" };
   const trimmed = due.trim();
+
+  // try ISO: YYYY-MM-DD or YYYY-MM-DDTHH:MM
   const match = trimmed.match(
     /^(\d{4}-\d{2}-\d{2})(?:[T\s](\d{2}:\d{2}))?$/
   );
@@ -69,6 +71,8 @@ function splitDue(due?: string | null): { date: string; time: string } {
       time: match[2] || "",
     };
   }
+
+  // fallback: first 10 chars as date, next 5 as time if present
   const date = trimmed.slice(0, 10);
   const time = trimmed.slice(11, 16);
   return { date, time };
@@ -85,6 +89,8 @@ export default function AssignmentCard({
   const [parsing, setParsing] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+
+  // ---------- Image → backend OCR ----------
 
   const handleBackendError = (msg?: string) => {
     Alert.alert("Image upload failed", msg || "Server error");
@@ -181,6 +187,8 @@ export default function AssignmentCard({
     }
   }, [course]);
 
+  // ---------- Editing helpers ----------
+
   const updateDraftField = (
     id: string,
     field: keyof Draft,
@@ -228,7 +236,7 @@ export default function AssignmentCard({
     ]);
   };
 
-  // 🔹 New: open editor using this card’s current values
+  // Open editor pre-filled with this card’s current data
   const openEditWithCurrent = () => {
     const iso = safeISO(dueDate || null);
     setDrafts([
@@ -259,9 +267,11 @@ export default function AssignmentCard({
     setDrafts([]);
   };
 
+  // ---------- Render ----------
+
   return (
     <>
-      {/* Card UI – only tiny change is the new Edit button on the right */}
+      {/* main card */}
       <View style={styles.card}>
         <View>
           <Text style={styles.title}>{title}</Text>
@@ -292,7 +302,7 @@ export default function AssignmentCard({
         </View>
       </View>
 
-      {/* Editor modal */}
+      {/* editor modal */}
       <Modal
         visible={editOpen}
         transparent
@@ -302,18 +312,15 @@ export default function AssignmentCard({
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Edit assignment
-              </Text>
+              <Text style={styles.modalTitle}>Edit assignment</Text>
               <TouchableOpacity onPress={() => setEditOpen(false)}>
                 <X size={20} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
             <Text style={styles.modalSub}>
-              Change the title, class, assignment type, due
-              date, due time, or description. When you’re
-              done, tap “Save assignments”.
+              Change the title, class, assignment type, due date, due time, or
+              description. When you’re done, tap “Save assignments”.
             </Text>
 
             <ScrollView
@@ -325,9 +332,7 @@ export default function AssignmentCard({
                 return (
                   <View key={d.id} style={styles.editCard}>
                     <View style={styles.editHeaderRow}>
-                      <Text style={styles.editLabel}>
-                        Assignment title
-                      </Text>
+                      <Text style={styles.editLabel}>Assignment title</Text>
                       <TouchableOpacity
                         onPress={() => deleteDraft(d.id)}
                       >
@@ -345,9 +350,7 @@ export default function AssignmentCard({
                         updateDraftField(d.id, "title", t)
                       }
                       placeholder="Assignment title"
-                      placeholderTextColor={
-                        colors.textSecondary + "99"
-                      }
+                      placeholderTextColor={colors.textSecondary + "99"}
                     />
 
                     <Text style={styles.editLabel}>Class</Text>
@@ -358,14 +361,10 @@ export default function AssignmentCard({
                         updateDraftField(d.id, "course", t)
                       }
                       placeholder="e.g., CS 370 – Algorithms"
-                      placeholderTextColor={
-                        colors.textSecondary + "99"
-                      }
+                      placeholderTextColor={colors.textSecondary + "99"}
                     />
 
-                    <Text style={styles.editLabel}>
-                      Assignment type
-                    </Text>
+                    <Text style={styles.editLabel}>Assignment type</Text>
                     <View style={styles.typeRow}>
                       {ASSIGNMENT_TYPES.map((t) => {
                         const active = d.type === t;
@@ -383,8 +382,7 @@ export default function AssignmentCard({
                             <Text
                               style={[
                                 styles.typeChipText,
-                                active &&
-                                  styles.typeChipTextActive,
+                                active && styles.typeChipTextActive,
                               ]}
                             >
                               {t}
@@ -404,9 +402,7 @@ export default function AssignmentCard({
                         updateDraftDue(d.id, t, time)
                       }
                       placeholder="2025-11-21"
-                      placeholderTextColor={
-                        colors.textSecondary + "99"
-                      }
+                      placeholderTextColor={colors.textSecondary + "99"}
                     />
 
                     <Text style={styles.editLabel}>
@@ -419,9 +415,7 @@ export default function AssignmentCard({
                         updateDraftDue(d.id, date, t)
                       }
                       placeholder="23:59"
-                      placeholderTextColor={
-                        colors.textSecondary + "99"
-                      }
+                      placeholderTextColor={colors.textSecondary + "99"}
                     />
 
                     <Text style={styles.editLabel}>
@@ -436,9 +430,7 @@ export default function AssignmentCard({
                         updateDraftField(d.id, "description", t)
                       }
                       placeholder="Notes or details…"
-                      placeholderTextColor={
-                        colors.textSecondary + "99"
-                      }
+                      placeholderTextColor={colors.textSecondary + "99"}
                     />
                   </View>
                 );
@@ -459,9 +451,7 @@ export default function AssignmentCard({
                 style={[styles.modalBtn, styles.modalCancelBtn]}
                 onPress={() => setEditOpen(false)}
               >
-                <Text style={styles.modalCancelText}>
-                  Cancel
-                </Text>
+                <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

@@ -25,7 +25,7 @@ import {
   safeISO,
 } from "./AssignmentsContext";
 import { colors } from "../constant/colors";
-import { API_BASE } from "../constant/api";
+import { buildUrl } from "../constant/api";
 
 type Props = {
   visible: boolean;
@@ -80,8 +80,7 @@ export default function AddAssignmentModal({
   const [description, setDescription] = useState("");
   const [type, setType] = useState<AssignmentType>("Assignment");
 
-  // Date & time state
-  // Time has a default (11:59 PM). Date is treated as "not chosen" until user picks.
+  // Time has a default (11:59 PM). Date is “not chosen” until user picks.
   const defaultTime = useMemo(() => {
     const t = new Date();
     t.setHours(23, 59, 0, 0);
@@ -181,7 +180,7 @@ export default function AddAssignmentModal({
     const ds: Draft[] = (items || []).map((it) => ({
       id: nextDraftId(),
       title: it.title || "Untitled",
-      // 👇 use the manual Class field if present
+      // use the manual Class field if present
       course: it.course || course || "Untitled Course",
       type:
         (it.assignment_type &&
@@ -215,10 +214,11 @@ export default function AddAssignmentModal({
         } as any
       );
 
-      const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/image?preprocess=${encodeURIComponent(
-        "screenshot"
-      )}&use_llm=true`;
+      const url = buildUrl(
+        `/assignments/image?preprocess=${encodeURIComponent(
+          "screenshot"
+        )}&use_llm=true`
+      );
       console.log("IMAGE (AddAssignmentModal) →", url);
 
       const resp = await fetch(url, {
@@ -615,7 +615,7 @@ export default function AddAssignmentModal({
             </View>
           )}
 
-          {/* Android inline dialogs (they render as native modal pickers) */}
+          {/* Android inline dialogs */}
           {Platform.OS !== "ios" && showDatePicker && (
             <DateTimePicker
               value={date || new Date()}

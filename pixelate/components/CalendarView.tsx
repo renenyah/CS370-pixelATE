@@ -1,17 +1,36 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
 
-export default function CalendarView({ view, setView }: any) {
+type ViewMode = "month" | "week" | "day";
+
+type CalendarViewProps = {
+  view: ViewMode;
+  setView: (v: ViewMode) => void;
+};
+
+export default function CalendarView({ view, setView }: CalendarViewProps) {
+  const options: ViewMode[] = ["month", "week", "day"];
+
   return (
     <View style={styles.wrapper}>
       <View style={styles.toggle}>
-        {["month", "week", "day"].map((v) => (
+        {options.map((v) => (
           <TouchableOpacity
             key={v}
             style={[styles.option, view === v && styles.active]}
             onPress={() => setView(v)}
           >
-            <Text style={[styles.optionText, view === v && styles.optionTextActive]}>
+            <Text
+              style={[
+                styles.optionText,
+                view === v && styles.optionTextActive,
+              ]}
+            >
               {v.toUpperCase()}
             </Text>
           </TouchableOpacity>
@@ -44,4 +63,3 @@ const styles = StyleSheet.create({
   },
   text: { color: "#6B7280", fontWeight: "600" },
 });
-

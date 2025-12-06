@@ -1,0 +1,19 @@
+# --- Web framework ---
+fastapi
+uvicorn[standard]
+
+# --- CORS + env loading ---
+python-dotenv
+
+# --- Core numeric / image stack ---
+numpy
+opencv-python-headless
+Pillow
+pytesseract
+
+# --- PDF + date parsing ---
+PyMuPDF
+dateparser
+
+# --- Google Gemini client ---
+google-genai

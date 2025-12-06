@@ -12,7 +12,7 @@ const normalized =
 
 // Default to localhost:8000 for dev if no env set
 export const API_BASE =
-  normalized || "http://127.0.0.1:8000";
+  normalized || "https://cs370-pixelate.onrender.com";
 
 export function buildUrl(path: string): string {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;

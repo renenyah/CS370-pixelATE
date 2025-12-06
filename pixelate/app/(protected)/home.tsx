@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Animated,
 } from "react-native";
 import {
   Clock,
@@ -25,6 +26,11 @@ import {
   Assignment,
 } from "../../components/AssignmentsContext";
 import { useAuth } from "../../context/AuthContext";
+
+// added collapsible import
+import Collapsible from 'react-native-collapsible';
+import { AntDesign } from "@expo/vector-icons";
+
 
 export default function HomeScreen() {
   const { assignments } = useAssignments();
@@ -203,6 +209,27 @@ export default function HomeScreen() {
     );
   }, [dueTodayAll, todayCourse]);
 
+  // added collapsible
+  const [collapsed, setIsCollapsed] = useState(true);
+
+  // added animation
+  const rotateValue = useState(new Animated.Value(0))[0];
+
+  const toggle = () => {
+    setIsCollapsed(!collapsed);
+
+    Animated.timing(rotateValue, {
+      toValue: collapsed ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const rotate = rotateValue.interpolate({
+    inputRange: [0,1],
+    outputRange: ["0deg", "90deg"],
+  });
+
   const upcoming7 = useMemo(
     () =>
       activeAssignments.filter((a) =>
@@ -218,6 +245,7 @@ export default function HomeScreen() {
       ),
     [activeAssignments]
   );
+
 
   return (
     <View style={styles.screen}>
@@ -275,75 +303,100 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ marginBottom: 12 }}
+        >
+          <Chip
+            label="All"
+            active={todayCourse === "All"}
+            onPress={() => setTodayCourse("All")}
+          />
+          {courses.map((c) => (
+            <Chip
+              key={c}
+              label={c}
+              active={todayCourse === c}
+              onPress={() => setTodayCourse(c)}
+             />
+          ))}
+        </ScrollView>
 
         {/* Today */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Today’s Assignments
-          </Text>
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginBottom: 12 }}
-          >
-            <Chip
-              label="All"
-              active={todayCourse === "All"}
-              onPress={() => setTodayCourse("All")}
-            />
-            {courses.map((c) => (
-              <Chip
-                key={c}
-                label={c}
-                active={todayCourse === c}
-                onPress={() => setTodayCourse(c)}
-              />
-            ))}
-          </ScrollView>
+          <TouchableOpacity style={styles.sectionHeaderRow} onPress={toggle}>
+            <Text style={styles.sectionTitle}>
+              Today’s Assignments
+            </Text>
 
+            {dueToday.length === 0 ? (
+              <AntDesign name="check-circle" size={22}/>
+            ) : (
+              <Animated.View style={{ transform: [{rotate}] }}>
+                <AntDesign name="caret-right" size={22}/>
+              </Animated.View>
+            )}
+          </TouchableOpacity>            
+          
           {dueToday.length === 0 ? (
-            <EmptyCard text="No assignments due today 🎉" />
+             <EmptyCard text="No assignments due today 🎉" />
           ) : (
             <View style={{ gap: 10 }}>
-              {dueToday.map((a) => (
-                <AssignmentCard
-                  key={a.id}
-                  assignment={a}
-                />
-              ))}
+              
+                {dueToday.map((a) => (
+                  <Collapsible collapsed={collapsed}>
+                    <AssignmentCard
+                      key={a.id}
+                      assignment={a}
+                    />
+                  </Collapsible>
+                ))}
+              
             </View>
           )}
-        </View>
 
+        </View>
+        
         {/* Upcoming section */}
         <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
+
+          <TouchableOpacity style={styles.sectionHeaderRow} onPress={toggle}>
             <Text style={styles.sectionTitle}>
               Upcoming
             </Text>
-            <Text style={styles.sectionSub}>
-              Next 7 days
-            </Text>
-          </View>
+            
+            {upcoming7.length === 0 ? (
+              <AntDesign name="check-circle" size={22}/>
+            ) : (
+              <Animated.View style={{ transform: [{rotate}] }}>
+                <AntDesign name="caret-right" size={22}/>
+              </Animated.View>
+            )}
+          </TouchableOpacity>
 
           {upcoming7.length === 0 ? (
             <EmptyCard text="Nothing coming up this week." />
           ) : (
             <View style={{ gap: 10 }}>
-              {upcoming7
-                .slice()
-                .sort((a, b) =>
-                  (a.dueISO || "").localeCompare(
-                    b.dueISO || ""
+              
+                {upcoming7
+                  .slice()
+                  .sort((a, b) =>
+                    (a.dueISO || "").localeCompare(
+                      b.dueISO || ""
+                    )
                   )
-                )
-                .map((a) => (
-                  <AssignmentCard
-                    key={a.id}
-                    assignment={a}
-                  />
-                ))}
+                  .map((a) => (
+                    <Collapsible collapsed={collapsed}>
+                      <AssignmentCard
+                        key={a.id}
+                        assignment={a}
+                      />
+                    </Collapsible>
+                  ))}
+              
             </View>
           )}
         </View>
@@ -351,18 +404,14 @@ export default function HomeScreen() {
         {/* Overdue section */}
         {overdue.length > 0 && (
           <View style={styles.section}>
-            <View style={styles.sectionHeaderRow}>
+            <TouchableOpacity style={styles.sectionHeaderRow} onPress={toggle}>
               <Text style={styles.sectionTitle}>
                 Overdue
               </Text>
-              <View style={styles.badgeDanger}>
-                <Text
-                  style={styles.badgeDangerText}
-                >
-                  Needs attention
-                </Text>
-              </View>
-            </View>
+              <Animated.View style={{ transform: [{rotate}] }}>
+                <AntDesign name="caret-right" size={22}/>
+              </Animated.View>
+            </TouchableOpacity>
 
             <View style={{ gap: 10 }}>
               {overdue
@@ -373,10 +422,12 @@ export default function HomeScreen() {
                   )
                 )
                 .map((a) => (
-                  <AssignmentCard
-                    key={a.id}
-                    assignment={a}
-                  />
+                  <Collapsible collapsed={collapsed}>
+                    <AssignmentCard
+                      key={a.id}
+                      assignment={a}
+                    />
+                  </Collapsible>
                 ))}
             </View>
           </View>
@@ -569,7 +620,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     borderRadius: 16,
-    padding: 14,
+    padding: 10,
     shadowColor: "#000",
     shadowOpacity: 0.06,
     shadowRadius: 10,
@@ -581,16 +632,16 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   statTitle: {
     color: "#111827",
-    fontWeight: "600",
-    marginBottom: 6,
+    fontWeight: "630",
+    marginBottom: 2,
     fontSize: 13,
   },
   statNumber: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
   },
   section: {

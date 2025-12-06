@@ -14,6 +14,6 @@ pytesseract
 # --- PDF + date parsing ---
 PyMuPDF
 dateparser
-
+python-multipart
 # --- Google Gemini client ---
 google-genai

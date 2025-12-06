@@ -52,7 +52,7 @@ export default function ClassDetailScreen() {
   const [editType, setEditType] = useState<AssignmentType>("Assignment");
   const [editDate, setEditDate] = useState("");
   const [editDesc, setEditDesc] = useState("");
-  const [editTime, setEditTime] = useState("11:59pm"); // for notes; logic still treats due time as 11:59pm
+  const [editTime, setEditTime] = useState("11:59pm"); // notes only; logic still treats due date as all-day
 
   const openEdit = (a: Assignment) => {
     setEditing(a);
@@ -77,7 +77,6 @@ export default function ClassDetailScreen() {
     const trimmedCourse = editCourse.trim();
 
     if (!trimmedTitle) {
-      // keep it simple; you can swap for Alert if you want
       console.warn("Missing title");
       return;
     }
@@ -90,6 +89,7 @@ export default function ClassDetailScreen() {
       type: editType,
       dueISO: normalizedDate,
       description: editDesc.trim(),
+      // editTime is for notes only right now – not stored on the Assignment model
     });
 
     closeEdit();
@@ -134,7 +134,7 @@ export default function ClassDetailScreen() {
                     )}
                   </View>
 
-                  {/* NEW: small Edit button, same overall card look */}
+                  {/* Edit button */}
                   <TouchableOpacity
                     style={styles.editBtn}
                     onPress={() => openEdit(a)}
@@ -160,7 +160,7 @@ export default function ClassDetailScreen() {
             <Text style={styles.modalTitle}>Edit assignment</Text>
             <Text style={styles.modalSub}>
               Update the title, class, type, due date, and description. Time is
-              assumed to be 11:59pm for schedule logic.
+              treated like notes only for now.
             </Text>
 
             <ScrollView
@@ -212,7 +212,7 @@ export default function ClassDetailScreen() {
               </View>
 
               <Text style={styles.modalLabel}>
-                Due date (YYYY-MM-DD)
+                Due date (YYYY-MM-DD or MM/DD/YYYY)
               </Text>
               <TextInput
                 style={styles.input}
@@ -222,9 +222,7 @@ export default function ClassDetailScreen() {
                 placeholderTextColor={colors.textSecondary + "99"}
               />
 
-              <Text style={styles.modalLabel}>
-                Due time (notes only)
-              </Text>
+              <Text style={styles.modalLabel}>Due time (notes only)</Text>
               <TextInput
                 style={styles.input}
                 value={editTime}

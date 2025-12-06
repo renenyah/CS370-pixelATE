@@ -1,9 +1,5 @@
 // components/UploadSyllabusModal.tsx
-import React, {
-  useCallback,
-  useState,
-  useMemo,
-} from "react";
+import React, { useCallback, useState } from "react";
 import {
   Modal,
   View,
@@ -13,16 +9,12 @@ import {
   TextInput,
   Alert,
   ScrollView,
-  Platform,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import DateTimePicker, {
-  DateTimePickerEvent,
-} from "@react-native-community/datetimepicker";
 import { X, Wand2, FileText, Trash2 } from "lucide-react-native";
 
 import { colors } from "../constant/colors";
-import { API_BASE } from "../constant/api";
+import { buildUrl } from "../constant/api";
 import {
   Draft,
   safeISO,
@@ -80,6 +72,23 @@ function nextDraftId(): string {
   return `d_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// Simple fetch-with-timeout helper so we don't hang forever
+async function fetchWithTimeout(
+  resource: string,
+  options: RequestInit = {},
+  timeoutMs = 15000
+): Promise<Response> {
+  return Promise.race([
+    fetch(resource, options),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("Request timed out")),
+        timeoutMs
+      )
+    ),
+  ]);
+}
+
 function mapBackendType(raw?: string | null): AssignmentType {
   const t = (raw || "").toLowerCase();
   if (t.includes("quiz")) return "Quiz";
@@ -90,26 +99,6 @@ function mapBackendType(raw?: string | null): AssignmentType {
   if (t.includes("discussion")) return "Discussion";
   if (t.includes("art")) return "Art";
   return "Assignment";
-}
-
-// Helper for turning date+time into a string safeISO can understand.
-function combineDateTimeToString(d: Date, t: Date): string {
-  const combined = new Date(
-    d.getFullYear(),
-    d.getMonth(),
-    d.getDate(),
-    t.getHours(),
-    t.getMinutes(),
-    0,
-    0
-  );
-  const mm = (combined.getMonth() + 1).toString().padStart(2, "0");
-  const dd = combined.getDate().toString().padStart(2, "0");
-  const yyyy = combined.getFullYear();
-  const hh = combined.getHours().toString().padStart(2, "0");
-  const min = combined.getMinutes().toString().padStart(2, "0");
-  // This includes time, but safeISO will normalize to a date-only string.
-  return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
 }
 
 export default function UploadSyllabusModal({
@@ -132,30 +121,11 @@ export default function UploadSyllabusModal({
   const [parsing, setParsing] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
 
-  // ----- Picker state for editing due date/time in Review step -----
-  const defaultTime = useMemo(() => {
-    const t = new Date();
-    t.setHours(23, 59, 0, 0); // 11:59 PM default
-    return t;
-  }, []);
-
-  const [activeDraftId, setActiveDraftId] = useState<string | null>(
-    null
-  );
-  const [pickerDate, setPickerDate] = useState<Date>(new Date());
-  const [pickerTime, setPickerTime] = useState<Date>(defaultTime);
-  const [pickerHasDate, setPickerHasDate] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-
   const closeAll = () => {
     setDrafts([]);
     setSyllabusText("");
     setStep("upload");
     setAiRepair(false);
-    setActiveDraftId(null);
-    setShowDatePicker(false);
-    setShowTimePicker(false);
     onClose();
   };
 
@@ -250,85 +220,6 @@ export default function UploadSyllabusModal({
     setDrafts((prev) => [...prev, d]);
   };
 
-  // ----- Picker helpers -----
-  const hidePickers = () => {
-    setShowDatePicker(false);
-    setShowTimePicker(false);
-  };
-
-  const applyPickerToDraft = () => {
-    if (!activeDraftId) {
-      hidePickers();
-      return;
-    }
-    let isoStr: string | null = null;
-    if (pickerHasDate) {
-      const dateTimeString = combineDateTimeToString(
-        pickerDate,
-        pickerTime
-      );
-      isoStr = safeISO(dateTimeString);
-    }
-    updateDraft(activeDraftId, "dueISO", isoStr || "");
-    setActiveDraftId(null);
-    hidePickers();
-  };
-
-  const openPickerForDraft = (draft: Draft) => {
-    setActiveDraftId(draft.id);
-
-    const existing = draft.dueISO || "";
-    let normalized: string | null = null;
-    if (existing) normalized = safeISO(existing);
-
-    if (normalized) {
-      const d = new Date(normalized + "T00:00:00");
-      setPickerDate(d);
-      setPickerHasDate(true);
-    } else {
-      setPickerDate(new Date());
-      setPickerHasDate(false);
-    }
-
-    // time is always default 11:59 PM for now
-    setPickerTime(defaultTime);
-
-    if (Platform.OS === "ios") {
-      setShowDatePicker(true);
-      setShowTimePicker(true);
-    } else {
-      setShowDatePicker(true);
-      setShowTimePicker(false);
-    }
-  };
-
-  const onChangeDate = (
-    _event: DateTimePickerEvent,
-    selected?: Date
-  ) => {
-    if (Platform.OS !== "ios") {
-      setShowDatePicker(false);
-    }
-    if (!selected) return;
-    setPickerDate(selected);
-    setPickerHasDate(true);
-    if (Platform.OS !== "ios") {
-      // After picking date on Android, open time picker
-      setShowTimePicker(true);
-    }
-  };
-
-  const onChangeTime = (
-    _event: DateTimePickerEvent,
-    selected?: Date
-  ) => {
-    if (Platform.OS !== "ios") {
-      setShowTimePicker(false);
-    }
-    if (!selected) return;
-    setPickerTime(selected);
-  };
-
   // ------------ PDF ------------
   const handlePickPdf = useCallback(async () => {
     const res = await DocumentPicker.getDocumentAsync({
@@ -350,13 +241,12 @@ export default function UploadSyllabusModal({
         } as any
       );
 
-      const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/pdf?use_llm=${
-        aiRepair ? "true" : "false"
-      }`;
+      const url = buildUrl(
+        `/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`
+      );
       console.log("PDF →", url);
 
-      const resp = await fetch(url, {
+      const resp = await fetchWithTimeout(url, {
         method: "POST",
         body: fd,
       });
@@ -398,7 +288,14 @@ export default function UploadSyllabusModal({
       makeDraftsFromItems(items);
     } catch (e: any) {
       console.log("PDF parse error:", e);
-      Alert.alert("Error", String(e?.message || e));
+      if (e?.message === "Request timed out") {
+        Alert.alert(
+          "Timeout",
+          "The server took too long to respond. It might be sleeping or offline."
+        );
+      } else {
+        Alert.alert("Error", String(e?.message || e));
+      }
     } finally {
       setParsing(false);
     }
@@ -415,11 +312,10 @@ export default function UploadSyllabusModal({
     }
     setParsing(true);
     try {
-      const base = API_BASE.replace(/\/$/, "");
-      const url = `${base}/assignments/text`;
+      const url = buildUrl("/assignments/text");
       console.log("TEXT →", url);
 
-      const resp = await fetch(url, {
+      const resp = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: syllabusText }),
@@ -457,7 +353,14 @@ export default function UploadSyllabusModal({
       makeDraftsFromItems(items);
     } catch (e: any) {
       console.log("Text parse error:", e);
-      Alert.alert("Error", String(e?.message || e));
+      if (e?.message === "Request timed out") {
+        Alert.alert(
+          "Timeout",
+          "The server took too long to respond. It might be sleeping or offline."
+        );
+      } else {
+        Alert.alert("Error", String(e?.message || e));
+      }
     } finally {
       setParsing(false);
     }
@@ -689,191 +592,158 @@ export default function UploadSyllabusModal({
                   paddingBottom: 8,
                 }}
               >
-                {drafts.map((d) => {
-                  const normalized = safeISO(
-                    d.dueISO || null
-                  );
-                  const dueLabel = normalized
-                    ? new Date(
-                        normalized +
-                          "T00:00:00"
-                      ).toLocaleDateString(
-                        undefined,
-                        {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        }
-                      )
-                    : "No date set";
-
-                  return (
+                {drafts.map((d) => (
+                  <View
+                    key={d.id}
+                    style={styles.card}
+                  >
                     <View
-                      key={d.id}
-                      style={styles.card}
+                      style={styles.cardHeader}
                     >
-                      <View
-                        style={styles.cardHeader}
-                      >
-                        <Text
-                          style={styles.cardLabel}
-                        >
-                          Assignment title
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() =>
-                            deleteDraft(d.id)
-                          }
-                        >
-                          <Trash2
-                            size={18}
-                            color={
-                              colors.textSecondary
-                            }
-                          />
-                        </TouchableOpacity>
-                      </View>
-
-                      <TextInput
-                        style={styles.input}
-                        value={d.title}
-                        onChangeText={(t) =>
-                          updateDraft(
-                            d.id,
-                            "title",
-                            t
-                          )
-                        }
-                        placeholder="Assignment title"
-                        placeholderTextColor={
-                          colors.textSecondary +
-                          "99"
-                        }
-                      />
-
-                      <Text
-                        style={styles.cardLabel}
-                      >
-                        Class name
+                      <Text style={styles.cardLabel}>
+                        Assignment title
                       </Text>
-                      <TextInput
-                        style={styles.input}
-                        value={d.course}
-                        onChangeText={(t) =>
-                          updateDraft(
-                            d.id,
-                            "course",
-                            t
-                          )
+                      <TouchableOpacity
+                        onPress={() =>
+                          deleteDraft(d.id)
                         }
-                        placeholder="e.g., AS 110-3 – Rome Sketchbook"
-                        placeholderTextColor={
-                          colors.textSecondary +
-                          "99"
-                        }
-                      />
-
-                      <Text
-                        style={styles.cardLabel}
                       >
-                        Due date &amp; time
-                      </Text>
-                      <View style={styles.dueRow}>
-                        <Text style={styles.dueText}>
-                          {dueLabel}
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.dueEditBtn}
-                          onPress={() =>
-                            openPickerForDraft(d)
+                        <Trash2
+                          size={18}
+                          color={
+                            colors.textSecondary
                           }
-                        >
-                          <Text
-                            style={
-                              styles.dueEditText
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    <TextInput
+                      style={styles.input}
+                      value={d.title}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "title",
+                          t
+                        )
+                      }
+                      placeholder="Assignment title"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
+
+                    <Text style={styles.cardLabel}>
+                      Class name
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={d.course}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "course",
+                          t
+                        )
+                      }
+                      placeholder="e.g., AS 110-3 – Rome Sketchbook"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
+
+                    <Text style={styles.cardLabel}>
+                      Due date (YYYY-MM-DD or
+                      MM/DD/YYYY)
+                    </Text>
+                    <TextInput
+                      style={styles.input}
+                      value={d.dueISO || ""}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "dueISO",
+                          t
+                        )
+                      }
+                      placeholder="2025-02-03"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
+
+                    <Text style={styles.cardLabel}>
+                      Type
+                    </Text>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={
+                        false
+                      }
+                      style={{
+                        marginBottom: 4,
+                      }}
+                    >
+                      {TYPE_OPTIONS.map(
+                        (opt) => (
+                          <TouchableOpacity
+                            key={opt}
+                            style={[
+                              styles.typeChip,
+                              d.type === opt &&
+                                styles.typeChipActive,
+                            ]}
+                            onPress={() =>
+                              updateDraft(
+                                d.id,
+                                "type",
+                                opt
+                              )
                             }
                           >
-                            Edit date &amp; time
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      <Text
-                        style={styles.cardLabel}
-                      >
-                        Type
-                      </Text>
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={
-                          false
-                        }
-                        style={{
-                          marginBottom: 4,
-                        }}
-                      >
-                        {TYPE_OPTIONS.map(
-                          (opt) => (
-                            <TouchableOpacity
-                              key={opt}
+                            <Text
                               style={[
-                                styles.typeChip,
+                                styles.typeChipText,
                                 d.type === opt &&
-                                  styles.typeChipActive,
+                                  styles.typeChipTextActive,
                               ]}
-                              onPress={() =>
-                                updateDraft(
-                                  d.id,
-                                  "type",
-                                  opt
-                                )
-                              }
                             >
-                              <Text
-                                style={[
-                                  styles
-                                    .typeChipText,
-                                  d.type ===
-                                    opt &&
-                                    styles.typeChipTextActive,
-                                ]}
-                              >
-                                {opt}
-                              </Text>
-                            </TouchableOpacity>
-                          )
-                        )}
-                      </ScrollView>
+                              {opt}
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      )}
+                    </ScrollView>
 
-                      <Text
-                        style={styles.cardLabel}
-                      >
-                        Description (optional)
-                      </Text>
-                      <TextInput
-                        style={[
-                          styles.input,
-                          { height: 70 },
-                        ]}
-                        multiline
-                        textAlignVertical="top"
-                        value={d.description || ""}
-                        onChangeText={(t) =>
-                          updateDraft(
-                            d.id,
-                            "description",
-                            t
-                          )
-                        }
-                        placeholder="Notes or details…"
-                        placeholderTextColor={
-                          colors.textSecondary +
-                          "99"
-                        }
-                      />
-                    </View>
-                  );
-                })}
+                    <Text style={styles.cardLabel}>
+                      Description (optional)
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        { height: 70 },
+                      ]}
+                      multiline
+                      textAlignVertical="top"
+                      value={d.description || ""}
+                      onChangeText={(t) =>
+                        updateDraft(
+                          d.id,
+                          "description",
+                          t
+                        )
+                      }
+                      placeholder="Notes or details…"
+                      placeholderTextColor={
+                        colors.textSecondary +
+                        "99"
+                      }
+                    />
+                  </View>
+                ))}
 
                 <TouchableOpacity
                   style={styles.addBtn}
@@ -913,64 +783,6 @@ export default function UploadSyllabusModal({
             </>
           )}
         </View>
-
-        {/* iOS bottom sheet pickers */}
-        {Platform.OS === "ios" &&
-          (showDatePicker || showTimePicker) && (
-            <View style={styles.iosPickerSheet}>
-              <View style={styles.iosPickerToolbar}>
-                <TouchableOpacity
-                  onPress={applyPickerToDraft}
-                >
-                  <Text
-                    style={styles.iosPickerDoneText}
-                  >
-                    Done
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={pickerDate}
-                  mode="date"
-                  display="spinner"
-                  themeVariant="light"
-                  onChange={onChangeDate}
-                  style={{ alignSelf: "stretch" }}
-                />
-              )}
-              {showTimePicker && (
-                <DateTimePicker
-                  value={pickerTime}
-                  mode="time"
-                  display="spinner"
-                  themeVariant="light"
-                  onChange={onChangeTime}
-                  style={{ alignSelf: "stretch" }}
-                />
-              )}
-            </View>
-          )}
-
-        {/* Android native dialogs */}
-        {Platform.OS !== "ios" && showDatePicker && (
-          <DateTimePicker
-            value={pickerDate}
-            mode="date"
-            display="default"
-            themeVariant="light"
-            onChange={onChangeDate}
-          />
-        )}
-        {Platform.OS !== "ios" && showTimePicker && (
-          <DateTimePicker
-            value={pickerTime}
-            mode="time"
-            display="default"
-            themeVariant="light"
-            onChange={onChangeTime}
-          />
-        )}
       </View>
     </Modal>
   );
@@ -1184,51 +996,5 @@ const styles = StyleSheet.create({
   addBtnText: {
     fontWeight: "600",
     color: "#111827",
-  },
-  dueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 4,
-  },
-  dueText: {
-    color: colors.textPrimary,
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  dueEditBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
-    backgroundColor: "#FFFFFF",
-  },
-  dueEditText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: colors.blue,
-  },
-  iosPickerSheet: {
-    width: "100%",
-    maxWidth: 480,
-    alignSelf: "center",
-    marginTop: 8,
-    borderRadius: 16,
-    backgroundColor: "#FFFFFF",
-    overflow: "hidden",
-  },
-  iosPickerToolbar: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
-  },
-  iosPickerDoneText: {
-    fontWeight: "700",
-    color: colors.blue,
   },
 });

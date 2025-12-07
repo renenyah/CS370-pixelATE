@@ -14,7 +14,6 @@ import {
   ArrowRight,
 } from "lucide-react-native";
 import { useLocalSearchParams } from "expo-router";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
   useAssignments,
@@ -27,10 +26,9 @@ import {
 } from "../../components/AssignmentsContext";
 import { useAuth } from "../../context/AuthContext";
 
-// added collapsible import
-import Collapsible from 'react-native-collapsible';
+import Collapsible from "react-native-collapsible";
 import { AntDesign } from "@expo/vector-icons";
-
+import { supabase } from "../../constant/supabase";
 
 export default function HomeScreen() {
   const { assignments } = useAssignments();
@@ -80,15 +78,6 @@ export default function HomeScreen() {
     },
   ];
 
-  // Per-user storage key so the tour only shows the first time they log in
-  const tourStorageKey = useMemo(
-    () =>
-      user?.id
-        ? `pixelate_seen_tour_${user.id}`
-        : "pixelate_seen_tour_anon",
-    [user?.id]
-  );
-
   // On first login for this user, show tour if they haven't seen it before
   useEffect(() => {
     let cancelled = false;
@@ -100,33 +89,64 @@ export default function HomeScreen() {
     }
 
     const run = async () => {
+      // No user yet → just show tour once
+      if (!user) {
+        setShowTour(true);
+        return;
+      }
+
       try {
-        const stored = await AsyncStorage.getItem(
-          tourStorageKey
-        );
-        if (!cancelled && stored !== "true") {
+        const { data, error } = await supabase
+          .from("user_settings")
+          .select("has_seen_tour")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (error) {
+          console.log("[user_settings] read error", error);
           setShowTour(true);
+          return;
         }
-      } catch {
-        // If anything fails, just show the tour once
+
+        if (!data) {
+          // Row will be created by AuthContext ensureUserSettings; until then, show tour
+          setShowTour(true);
+          return;
+        }
+
+        setShowTour(!data.has_seen_tour);
+      } catch (e) {
         if (!cancelled) {
+          console.log("[user_settings] exception", e);
           setShowTour(true);
         }
       }
     };
 
     run();
+
     return () => {
       cancelled = true;
     };
-  }, [params.showTour, tourStorageKey]);
+  }, [user?.id, params.showTour]);
 
   const markTourSeen = async () => {
     setShowTour(false);
     try {
-      await AsyncStorage.setItem(tourStorageKey, "true");
-    } catch {
-      // ignore storage errors
+      if (user) {
+        const { error } = await supabase
+          .from("user_settings")
+          .update({ has_seen_tour: true })
+          .eq("user_id", user.id);
+
+        if (error) {
+          console.log("[user_settings] update error", error);
+        }
+      }
+    } catch (e) {
+      console.log("[user_settings] update exception", e);
     }
   };
 
@@ -174,10 +194,7 @@ export default function HomeScreen() {
     () =>
       assignments.filter((a) => {
         if (a.completed) return false;
-        const label = labelFromSemesterYear(
-          a.semester,
-          a.year
-        );
+        const label = labelFromSemesterYear(a.semester, a.year);
         if (label && label !== currentSemesterLabel) {
           return false;
         }
@@ -185,6 +202,7 @@ export default function HomeScreen() {
       }),
     [assignments, currentSemesterLabel]
   );
+
 
   const courses = useMemo(() => {
     const s = new Set<string>();
@@ -197,7 +215,7 @@ export default function HomeScreen() {
   const dueTodayAll = useMemo(
     () =>
       activeAssignments.filter((a) =>
-        isSameISO(a.dueISO || null, todayISO)
+        isSameISO(a.dueISO || null, todayISO())
       ),
     [activeAssignments]
   );
@@ -209,10 +227,9 @@ export default function HomeScreen() {
     );
   }, [dueTodayAll, todayCourse]);
 
-  // added collapsible
+  // collapsible state (same toggle used for all three sections)
   const [collapsed, setIsCollapsed] = useState(true);
 
-  // added animation
   const rotateValue = useState(new Animated.Value(0))[0];
 
   const toggle = () => {
@@ -226,7 +243,7 @@ export default function HomeScreen() {
   };
 
   const rotate = rotateValue.interpolate({
-    inputRange: [0,1],
+    inputRange: [0, 1],
     outputRange: ["0deg", "90deg"],
   });
 
@@ -245,7 +262,6 @@ export default function HomeScreen() {
       ),
     [activeAssignments]
   );
-
 
   return (
     <View style={styles.screen}>
@@ -303,6 +319,8 @@ export default function HomeScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Course filter chips */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -319,59 +337,57 @@ export default function HomeScreen() {
               label={c}
               active={todayCourse === c}
               onPress={() => setTodayCourse(c)}
-             />
+            />
           ))}
         </ScrollView>
 
         {/* Today */}
         <View style={styles.section}>
-
-          <TouchableOpacity style={styles.sectionHeaderRow} onPress={toggle}>
+          <TouchableOpacity
+            style={styles.sectionHeaderRow}
+            onPress={toggle}
+          >
             <Text style={styles.sectionTitle}>
               Today’s Assignments
             </Text>
 
             {dueToday.length === 0 ? (
-              <AntDesign name="check-circle" size={22}/>
+              <AntDesign name="check-circle" size={22} />
             ) : (
-              <Animated.View style={{ transform: [{rotate}] }}>
-                <AntDesign name="caret-right" size={22}/>
+              <Animated.View style={{ transform: [{ rotate }] }}>
+                <AntDesign name="caret-right" size={22} />
               </Animated.View>
             )}
-          </TouchableOpacity>            
-          
+          </TouchableOpacity>
+
           {dueToday.length === 0 ? (
-             <EmptyCard text="No assignments due today 🎉" />
+            <EmptyCard text="No assignments due today 🎉" />
           ) : (
             <View style={{ gap: 10 }}>
-              
-                {dueToday.map((a) => (
-                  <Collapsible collapsed={collapsed}>
-                    <AssignmentCard
-                      key={a.id}
-                      assignment={a}
-                    />
-                  </Collapsible>
-                ))}
-              
+              {dueToday.map((a) => (
+                <Collapsible key={a.id} collapsed={collapsed}>
+                  <AssignmentCard assignment={a} />
+                </Collapsible>
+              ))}
             </View>
           )}
-
         </View>
-        
+
         {/* Upcoming section */}
         <View style={styles.section}>
-
-          <TouchableOpacity style={styles.sectionHeaderRow} onPress={toggle}>
+          <TouchableOpacity
+            style={styles.sectionHeaderRow}
+            onPress={toggle}
+          >
             <Text style={styles.sectionTitle}>
               Upcoming
             </Text>
-            
+
             {upcoming7.length === 0 ? (
-              <AntDesign name="check-circle" size={22}/>
+              <AntDesign name="check-circle" size={22} />
             ) : (
-              <Animated.View style={{ transform: [{rotate}] }}>
-                <AntDesign name="caret-right" size={22}/>
+              <Animated.View style={{ transform: [{ rotate }] }}>
+                <AntDesign name="caret-right" size={22} />
               </Animated.View>
             )}
           </TouchableOpacity>
@@ -380,23 +396,18 @@ export default function HomeScreen() {
             <EmptyCard text="Nothing coming up this week." />
           ) : (
             <View style={{ gap: 10 }}>
-              
-                {upcoming7
-                  .slice()
-                  .sort((a, b) =>
-                    (a.dueISO || "").localeCompare(
-                      b.dueISO || ""
-                    )
+              {upcoming7
+                .slice()
+                .sort((a, b) =>
+                  (a.dueISO || "").localeCompare(
+                    b.dueISO || ""
                   )
-                  .map((a) => (
-                    <Collapsible collapsed={collapsed}>
-                      <AssignmentCard
-                        key={a.id}
-                        assignment={a}
-                      />
-                    </Collapsible>
-                  ))}
-              
+                )
+                .map((a) => (
+                  <Collapsible key={a.id} collapsed={collapsed}>
+                    <AssignmentCard assignment={a} />
+                  </Collapsible>
+                ))}
             </View>
           )}
         </View>
@@ -404,12 +415,15 @@ export default function HomeScreen() {
         {/* Overdue section */}
         {overdue.length > 0 && (
           <View style={styles.section}>
-            <TouchableOpacity style={styles.sectionHeaderRow} onPress={toggle}>
+            <TouchableOpacity
+              style={styles.sectionHeaderRow}
+              onPress={toggle}
+            >
               <Text style={styles.sectionTitle}>
                 Overdue
               </Text>
-              <Animated.View style={{ transform: [{rotate}] }}>
-                <AntDesign name="caret-right" size={22}/>
+              <Animated.View style={{ transform: [{ rotate }] }}>
+                <AntDesign name="caret-right" size={22} />
               </Animated.View>
             </TouchableOpacity>
 
@@ -422,11 +436,8 @@ export default function HomeScreen() {
                   )
                 )
                 .map((a) => (
-                  <Collapsible collapsed={collapsed}>
-                    <AssignmentCard
-                      key={a.id}
-                      assignment={a}
-                    />
+                  <Collapsible key={a.id} collapsed={collapsed}>
+                    <AssignmentCard assignment={a} />
                   </Collapsible>
                 ))}
             </View>
@@ -636,10 +647,11 @@ const styles = StyleSheet.create({
   },
   statTitle: {
     color: "#111827",
-    fontWeight: "630",
+    fontWeight: "600",
     marginBottom: 2,
     fontSize: 13,
   },
+
   statNumber: {
     fontSize: 24,
     fontWeight: "800",
@@ -657,21 +669,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-  },
-  sectionSub: {
-    color: "#6B7280",
-    fontSize: 13,
-  },
-  badgeDanger: {
-    backgroundColor: "#FEE2E2",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  badgeDangerText: {
-    color: "#B91C1C",
-    fontWeight: "700",
-    fontSize: 11,
   },
   chip: {
     paddingHorizontal: 14,

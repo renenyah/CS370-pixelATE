@@ -19,6 +19,7 @@ import PlusMenu from "../components/PlusMenu";
 import UploadSyllabusModal from "../components/UploadSyllabusModal";
 import AddAssignmentModal from "../components/AddAssignmentModal";
 import DraftEditorModal from "../components/DraftEditorModal";
+import AddClassModal from "../components/AddClassModal"; // ✅ NEW
 
 import {
   AssignmentsProvider,
@@ -39,11 +40,10 @@ function InnerLayout() {
   const [plusOpen, setPlusOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [addAssignmentOpen, setAddAssignmentOpen] = useState(false);
+  const [addClassOpen, setAddClassOpen] = useState(false); // ✅ NEW
 
   const [draftEditorOpen, setDraftEditorOpen] = useState(false);
-  const [pendingDrafts, setPendingDrafts] = useState<Draft[] | null>(
-    null
-  );
+  const [pendingDrafts, setPendingDrafts] = useState<Draft[] | null>(null);
 
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
@@ -61,6 +61,14 @@ function InnerLayout() {
     setPendingDrafts(null);
   };
 
+  const closeAllModals = () => {
+    setPlusOpen(false);
+    setUploadOpen(false);
+    setAddAssignmentOpen(false);
+    setAddClassOpen(false);       // ✅ make sure class modal closes too
+    setDraftEditorOpen(false);
+  };
+
   return (
     <View style={{ flex: 1 }}>
       {/* All screens in the app */}
@@ -76,7 +84,7 @@ function InnerLayout() {
           }}
           onAddClass={() => {
             setPlusOpen(false);
-            router.push("/classes");
+            setAddClassOpen(true);     // ✅ open AddClassModal instead of routing
           }}
           onAddAssignment={() => {
             setPlusOpen(false);
@@ -90,6 +98,14 @@ function InnerLayout() {
         <UploadSyllabusModal
           visible={uploadOpen}
           onClose={() => setUploadOpen(false)}
+        />
+      )}
+
+      {/* Add class modal ✅ NEW */}
+      {!isAuthRoute && (
+        <AddClassModal
+          visible={addClassOpen}
+          onClose={() => setAddClassOpen(false)}
         />
       )}
 
@@ -123,10 +139,7 @@ function InnerLayout() {
             Icon={HomeIcon}
             active={pathname === "/home"}
             onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              setDraftEditorOpen(false);
+              closeAllModals();
               router.push("/home");
             }}
           />
@@ -136,10 +149,7 @@ function InnerLayout() {
             Icon={FolderIcon}
             active={pathname === "/classes"}
             onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              setDraftEditorOpen(false);
+              closeAllModals();
               router.push("/classes");
             }}
           />
@@ -157,10 +167,7 @@ function InnerLayout() {
             Icon={CalendarIcon}
             active={pathname === "/calendar"}
             onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              setDraftEditorOpen(false);
+              closeAllModals();
               router.push("/calendar");
             }}
           />
@@ -170,10 +177,7 @@ function InnerLayout() {
             Icon={UserIcon}
             active={pathname === "/profile"}
             onPress={() => {
-              setPlusOpen(false);
-              setUploadOpen(false);
-              setAddAssignmentOpen(false);
-              setDraftEditorOpen(false);
+              closeAllModals();
               router.push("/profile");
             }}
           />

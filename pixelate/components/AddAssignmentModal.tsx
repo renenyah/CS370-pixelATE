@@ -194,7 +194,7 @@ export default function AddAssignmentModal({
   // ------------ IMAGE / OCR ------------
   const handlePickImage = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaType.Images,
       allowsEditing: false,
       quality: 1,
     });

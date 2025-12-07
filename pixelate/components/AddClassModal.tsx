@@ -1,3 +1,4 @@
+// components/AddClassModal.tsx
 import React, { useEffect, useState } from "react";
 import {
   Modal,
@@ -14,7 +15,7 @@ type AddClassModalProps = {
   visible: boolean;
   onClose: () => void;
 
-  // ✅ Optional props so this modal can also be used for editing
+  // Optional props so we can use the same modal to edit
   mode?: "add" | "edit";
   initialName?: string;
   initialSemester?: string;
@@ -24,7 +25,13 @@ type AddClassModalProps = {
   originalName?: string;
 };
 
-const colorOptions = ["#7C3AED", "#2563EB", "#059669", "#DC2626", "#F59E0B"];
+const colorOptions = [
+  "#7C3AED",
+  "#2563EB",
+  "#059669",
+  "#DC2626",
+  "#F59E0B",
+];
 
 export default function AddClassModal({
   visible,
@@ -41,11 +48,13 @@ export default function AddClassModal({
   const [name, setName] = useState("");
   const [semester, setSemester] = useState("");
   const [year, setYear] = useState<number | null>(null);
-  const [selectedColor, setSelectedColor] = useState(colorOptions[0]);
+  const [selectedColor, setSelectedColor] = useState(
+    colorOptions[0]
+  );
 
   const isEdit = mode === "edit";
 
-  // When opening in edit mode, pre-fill fields from props
+  // Pre-fill when opening in edit mode
   useEffect(() => {
     if (!visible) return;
 
@@ -54,7 +63,10 @@ export default function AddClassModal({
       setSemester(initialSemester ?? "");
       setYear(initialYear ?? null);
 
-      if (initialColor && colorOptions.includes(initialColor)) {
+      if (
+        initialColor &&
+        colorOptions.includes(initialColor)
+      ) {
         setSelectedColor(initialColor);
       } else if (initialColor) {
         setSelectedColor(initialColor);
@@ -62,24 +74,37 @@ export default function AddClassModal({
         setSelectedColor(colorOptions[0]);
       }
     } else {
-      // add mode: reset to blank when opened
+      // "add" mode → reset fields
       setName("");
       setSemester("");
       setYear(null);
       setSelectedColor(colorOptions[0]);
     }
-  }, [visible, isEdit, initialName, initialSemester, initialYear, initialColor]);
+  }, [
+    visible,
+    isEdit,
+    initialName,
+    initialSemester,
+    initialYear,
+    initialColor,
+  ]);
 
   const handleSave = () => {
     const trimmedName = name.trim();
     const trimmedSemester = semester.trim();
-    const numericYear = year && !Number.isNaN(year) ? year : undefined;
+    const numericYear =
+      year && !Number.isNaN(year) ? year : undefined;
 
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      // nothing to save if name empty
+      return;
+    }
 
     if (isEdit) {
-      // ✅ Update existing folder + its assignments (handled in context)
-      const oldName = originalName || initialName || trimmedName;
+      // ✅ Update existing folder (no color param here!)
+      const oldName =
+        originalName || initialName || trimmedName;
+
       updateClassFolder({
         oldName,
         newName: trimmedName,
@@ -87,7 +112,7 @@ export default function AddClassModal({
         year: numericYear,
       });
     } else {
-      // ✅ Add new class folder
+      // ✅ Add new class folder (color is allowed here)
       addClassFolder({
         name: trimmedName,
         color: selectedColor,
@@ -147,7 +172,8 @@ export default function AddClassModal({
                 style={[
                   styles.colorDot,
                   { backgroundColor: c },
-                  selectedColor === c && styles.colorDotSelected,
+                  selectedColor === c &&
+                    styles.colorDotSelected,
                 ]}
                 onPress={() => setSelectedColor(c)}
               />
@@ -164,7 +190,10 @@ export default function AddClassModal({
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={onClose} style={styles.cancel}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.cancel}
+          >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>

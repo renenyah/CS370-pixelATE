@@ -1,191 +1,88 @@
 // components/UploadSyllabusModal.tsx
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 import {
-  Modal,
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Modal,
   TextInput,
-  Alert,
   ScrollView,
+  Alert,
   Platform,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
-import { X, Wand2, FileText, Trash2 } from "lucide-react-native";
+import { X, FileText, Trash2, Wand2 } from "lucide-react-native";
 
-import { colors } from "../constant/colors";
-import { API_BASE } from "../constant/api";
 import {
   Draft,
-  safeISO,
   useAssignments,
-  AssignmentType,
+  assignmentIdentityKey,
 } from "./AssignmentsContext";
-
-type DueItem = {
-  title: string;
-  due_date_raw?: string;
-  due_date_iso?: string;
-  page?: number | null;
-  course?: string;
-  source?: string;
-  assignment_type?: string; // from backend
-};
-
-type ApiResponse = {
-  status?: "ok" | "error";
-  message?: string;
-  items?: DueItem[];
-  course_name?: string;
-};
+import { colors } from "../constant/colors";
+import { buildUrl } from "../constant/api";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
 };
 
-type Step = "upload" | "review";
+const SEMESTERS = ["Spring", "Summer", "Fall"] as const;
 
-const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"];
-
+// ✅ local color options instead of importing CLASS_COLORS
 const CLASS_COLORS = [
-  colors.lavender,
-  colors.pink,
-  colors.blueLight,
-  colors.blue,
-  "#FDE68A",
+  "#CDB4DB", // lavender
+  "#FFC8FC", // pink
+  "#BDE0FE", // blueLight
+  "#A2D2FF", // blue
+  "#FBBF24", // accent
 ];
-
-const TYPE_OPTIONS: AssignmentType[] = [
-  "Assignment",
-  "Quiz",
-  "Test",
-  "Presentation",
-  "Project",
-  "Reading",
-  "Discussion",
-  "Art",
-  "Other",
-];
-
-function nextDraftId(): string {
-  return `d_${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// Simple fetch-with-timeout helper so we don't hang forever
-async function fetchWithTimeout(
-  resource: string,
-  options: RequestInit = {},
-  timeoutMs = 15000
-): Promise<Response> {
-  return Promise.race([
-    fetch(resource, options),
-    new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Request timed out")),
-        timeoutMs
-      )
-    ),
-  ]);
-}
-
-function mapBackendType(raw?: string | null): AssignmentType {
-  const t = (raw || "").toLowerCase();
-  if (t.includes("quiz")) return "Quiz";
-  if (t.includes("test") || t.includes("exam")) return "Test";
-  if (t.includes("present")) return "Presentation";
-  if (t.includes("project")) return "Project";
-  if (t.includes("reading")) return "Reading";
-  if (t.includes("discussion")) return "Discussion";
-  if (t.includes("art")) return "Art";
-  return "Assignment";
-}
 
 export default function UploadSyllabusModal({
   visible,
   onClose,
 }: Props) {
-  const { addAssignmentsFromDrafts } = useAssignments();
+  const { assignments, addAssignmentsFromDrafts } =
+    useAssignments();
 
-  const [step, setStep] = useState<Step>("upload");
-
-  const [aiRepair, setAiRepair] = useState(false);
-  const [courseName, setCourseName] = useState("");
-  const [semester, setSemester] = useState<string>("Fall");
-  const [year, setYear] = useState<string>("2025");
-  const [folderColor, setFolderColor] = useState<string>(
-    colors.lavender
+  const [step, setStep] = useState<"upload" | "review">(
+    "upload"
   );
-  const [syllabusText, setSyllabusText] = useState("");
-
-  const [parsing, setParsing] = useState(false);
+  const [courseName, setCourseName] =
+    useState<string>("");
+  const [semester, setSemester] =
+    useState<string>("Fall");
+  const [year, setYear] = useState<string>(
+    String(new Date().getFullYear())
+  );
+  const [folderColor, setFolderColor] =
+    useState<string>(CLASS_COLORS[0]);
+  const [syllabusText, setSyllabusText] =
+    useState<string>("");
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [parsing, setParsing] = useState(false);
+  const [aiRepair, setAiRepair] = useState(false);
+
+  const resetState = () => {
+    setStep("upload");
+    setCourseName("");
+    setSemester("Fall");
+    setYear(String(new Date().getFullYear()));
+    setFolderColor(CLASS_COLORS[0]);
+    setSyllabusText("");
+    setDrafts([]);
+    setParsing(false);
+  };
 
   const closeAll = () => {
-    setDrafts([]);
-    setSyllabusText("");
-    setStep("upload");
-    setAiRepair(false);
+    resetState();
     onClose();
-  };
-
-  const handleBackendError = (msg?: string) => {
-    Alert.alert("Upload failed", msg || "Server error");
-  };
-
-  const makeDraftsFromItems = (items: DueItem[]) => {
-    const yearNum = Number(year || "");
-    const normalizedYear =
-      !isNaN(yearNum) && yearNum > 1900 ? yearNum : undefined;
-
-    const ds: Draft[] = (items || []).map((it) => ({
-      id: nextDraftId(),
-      title: it.title || "Untitled",
-      course: courseName || it.course || "",
-      type: mapBackendType(it.assignment_type),
-      dueISO: safeISO(
-        it.due_date_iso || it.due_date_raw || null
-      ),
-      description: "",
-      semester,
-      year: normalizedYear,
-      semesterLabel:
-        semester && normalizedYear
-          ? `${semester} ${normalizedYear}`
-          : undefined,
-      color: folderColor,
-    }));
-
-    if (!ds.length) {
-      Alert.alert(
-        "No assignments found",
-        "The extractor didn't find any assignments in this syllabus."
-      );
-      return;
-    }
-
-    setDrafts(ds);
-    setStep("review");
-  };
-
-  const handleSaveAssignments = () => {
-    if (!drafts.length) {
-      closeAll();
-      return;
-    }
-    const cleaned = drafts.map((d) => ({
-      ...d,
-      dueISO: safeISO(d.dueISO || null),
-    }));
-    addAssignmentsFromDrafts(cleaned);
-    closeAll();
   };
 
   const updateDraft = (
     id: string,
     field: keyof Draft,
-    value: string | AssignmentType
+    value: any
   ) => {
     setDrafts((prev) =>
       prev.map((d) =>
@@ -198,179 +95,186 @@ export default function UploadSyllabusModal({
     setDrafts((prev) => prev.filter((d) => d.id !== id));
   };
 
-  const handleAddBlankDraft = () => {
-    const yearNum = Number(year || "");
-    const normalizedYear =
-      !isNaN(yearNum) && yearNum > 1900 ? yearNum : undefined;
+  // ---- PDF picker with backend call ----
+  const handlePickPdf = async () => {
+    try {
+      const res =
+        await DocumentPicker.getDocumentAsync({
+          type:
+            Platform.OS === "web"
+              ? "application/pdf"
+              : "application/pdf",
+          copyToCacheDirectory: true,
+          multiple: false,
+        });
 
-    const d: Draft = {
-      id: nextDraftId(),
-      title: "",
-      course: courseName,
-      type: "Assignment",
-      dueISO: null,
-      description: "",
-      semester,
-      year: normalizedYear,
-      semesterLabel:
-        semester && normalizedYear
-          ? `${semester} ${normalizedYear}`
-          : undefined,
-      color: folderColor,
-    };
-    setDrafts((prev) => [...prev, d]);
-  };
-
-// ------------ PDF ------------
-const handlePickPdf = useCallback(async () => {
-  const res = await DocumentPicker.getDocumentAsync({
-    type: ["application/pdf"],
-    copyToCacheDirectory: true,
-  });
-  if (res.canceled || !res.assets?.[0]) return;
-
-  const asset = res.assets[0];
-  setParsing(true);
-
-  try {
-    const fd = new FormData();
-
-    if (Platform.OS === "web") {
-      // 🔹 On web we need a real File/Blob, not { uri, name, type }
-      const existingFile = (asset as any).file as File | undefined;
-
-      let file: File;
-      if (existingFile) {
-        file = existingFile;
-      } else {
-        const blob = await fetch(asset.uri).then((r) => r.blob());
-        file = new File(
-          [blob],
-          asset.name || `syllabus_${Date.now()}.pdf`,
-          { type: asset.mimeType || "application/pdf" }
-        );
+      if (res.canceled || !res.assets?.length) {
+        return;
       }
 
-      fd.append("file", file);
-    } else {
-      // 🔹 Native (iOS/Android) – keep the RN-style object
-      fd.append(
-        "file",
-        {
-          uri: asset.uri,
-          name: asset.name || `syllabus_${Date.now()}.pdf`,
-          type: asset.mimeType || "application/pdf",
-        } as any
+      const asset = res.assets[0];
+      const uri = asset.uri;
+
+      setParsing(true);
+
+      const form = new FormData();
+      form.append("file", {
+        uri,
+        name: asset.name ?? "syllabus.pdf",
+        type: "application/pdf",
+      } as any);
+
+      const url = buildUrl(
+        `/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`
       );
-    }
+      console.log("PDF →", url);
 
-    const base = API_BASE.replace(/\/$/, "");
-    const url = `${base}/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`;
-    console.log("PDF →", url);
-
-    const resp = await fetch(url, {
-      method: "POST",
-      body: fd,
-    });
-
-    if (!resp.ok) {
-      console.log("PDF resp not ok:", resp.status, resp.statusText);
-      return handleBackendError(`HTTP ${resp.status} – ${resp.statusText}`);
-    }
-
-    let json: ApiResponse | any;
-    try {
-      json = (await resp.json()) as ApiResponse;
-    } catch (e: any) {
-      console.log("PDF JSON parse error:", e);
-      return handleBackendError("Could not parse server response.");
-    }
-
-    console.log("PDF resp →", JSON.stringify(json));
-
-    if (json.course_name && !courseName) {
-      setCourseName(json.course_name);
-    }
-
-    const items = Array.isArray(json?.items)
-      ? json.items
-      : Array.isArray(json)
-      ? json
-      : [];
-
-    makeDraftsFromItems(items);
-  } catch (e: any) {
-    console.log("PDF parse error:", e);
-    Alert.alert("Error", String(e?.message || e));
-  } finally {
-    setParsing(false);
-  }
-}, [aiRepair, courseName, semester, year, folderColor]);
-
-  // ------------ TEXT ------------
-  const handleParseText = useCallback(async () => {
-    if (!syllabusText.trim()) {
-      Alert.alert(
-        "Add some text",
-        "Paste syllabus text first."
-      );
-      return;
-    }
-    setParsing(true);
-    try {
-      const url = buildUrl("/assignments/text");
-      console.log("TEXT →", url);
-
-      const resp = await fetchWithTimeout(url, {
+      const resp = await fetch(url, {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text: syllabusText }),
+        body: form,
       });
 
       if (!resp.ok) {
+        if (resp.status === 409) {
+          // (In case you later make backend return 409 for exact duplicate PDF)
+          setParsing(false);
+          Alert.alert(
+            "Already uploaded",
+            "This syllabus (or an identical copy) has already been uploaded. If you need to adjust assignments, edit them from the Classes tab."
+          );
+          return;
+        }
+
         console.log(
-          "Text resp not ok:",
+          "PDF resp not ok:",
           resp.status,
           resp.statusText
         );
-        return handleBackendError(
-          `HTTP ${resp.status} – ${resp.statusText}`
-        );
-      }
-
-      let json: ApiResponse | any;
-      try {
-        json = (await resp.json()) as ApiResponse;
-      } catch (e: any) {
-        console.log("Text JSON parse error:", e);
-        return handleBackendError(
-          "Could not parse server response."
-        );
-      }
-
-      console.log("Text resp →", json);
-
-      const items = Array.isArray(json?.items)
-        ? json.items
-        : Array.isArray(json)
-        ? json
-        : [];
-
-      makeDraftsFromItems(items);
-    } catch (e: any) {
-      console.log("Text parse error:", e);
-      if (e?.message === "Request timed out") {
+        setParsing(false);
         Alert.alert(
-          "Timeout",
-          "The server took too long to respond. It might be sleeping or offline."
+          "Error",
+          `Failed to parse PDF (HTTP ${resp.status}).`
         );
-      } else {
-        Alert.alert("Error", String(e?.message || e));
+        return;
       }
-    } finally {
+
+      const json = await resp.json();
+      console.log("PDF parsed:", json);
+
+      const serverItems: any[] =
+        json.items || json.assignments || [];
+
+      const extracted: Draft[] = serverItems.map((a: any) => {
+        const rawDue =
+          a.due_date_iso ||
+          (a.due_at
+            ? String(a.due_at).slice(0, 10)
+            : null);
+
+        return {
+          id:
+            typeof crypto !== "undefined" &&
+            "randomUUID" in crypto
+              ? crypto.randomUUID()
+              : `${Date.now()}-${Math.random()}`,
+          title: a.title ?? "",
+          course:
+            courseName ||
+            a.course ||
+            "",
+          type: a.assignment_type ?? a.type,
+          dueISO: rawDue,
+          description: a.description || "",
+          semester,
+          year: Number(year) || undefined,
+          color: folderColor,
+          priority: "medium",
+        };
+      });
+
+      setDrafts(extracted);
+      setStep("review");
       setParsing(false);
+    } catch (e: any) {
+      console.error("PDF parse error:", e);
+      setParsing(false);
+      Alert.alert(
+        "Error",
+        "There was a problem parsing the PDF."
+      );
     }
-  }, [syllabusText, courseName, semester, year, folderColor]);
+  };
+
+  const handleParseText = async () => {
+    if (!syllabusText.trim()) {
+      Alert.alert(
+        "Missing text",
+        "Paste syllabus text or upload a PDF first."
+      );
+      return;
+    }
+
+    const newDraft: Draft = {
+      id:
+        typeof crypto !== "undefined" &&
+        "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`,
+      title: "Syllabus assignment",
+      course: courseName || "",
+      description: syllabusText.trim(),
+      dueISO: null,
+      semester,
+      year: Number(year) || undefined,
+      color: folderColor,
+      priority: "medium",
+    };
+
+    setDrafts([newDraft]);
+    setStep("review");
+  };
+
+  const handleSaveDrafts = async () => {
+    if (!drafts.length) {
+      Alert.alert(
+        "No assignments",
+        "There are no assignments to save."
+      );
+      return;
+    }
+
+    // 🔍 FRONTEND duplicate detection
+    const existingKeys = new Set(
+      assignments.map((a) =>
+        assignmentIdentityKey({
+          course: a.course,
+          title: a.title,
+          dueISO: a.dueISO || null,
+        })
+      )
+    );
+
+    const uniqueDrafts = drafts.filter((d) => {
+      const key = assignmentIdentityKey({
+        course: d.course,
+        title: d.title,
+        dueISO: d.dueISO || null,
+      });
+      return !existingKeys.has(key);
+    });
+
+    if (uniqueDrafts.length === 0) {
+      Alert.alert(
+        "Already uploaded",
+        "All of these assignments are already in your planner. Nothing new was added."
+      );
+      closeAll();
+      return;
+    }
+
+    await addAssignmentsFromDrafts(uniqueDrafts);
+    closeAll();
+  };
 
   // ------------ RENDER ------------
   return (
@@ -389,7 +293,10 @@ const handlePickPdf = useCallback(async () => {
                 : "Review Assignments"}
             </Text>
             <TouchableOpacity onPress={closeAll}>
-              <X size={22} color={colors.textPrimary} />
+              <X
+                size={22}
+                color={colors.textPrimary}
+              />
             </TouchableOpacity>
           </View>
 
@@ -404,10 +311,13 @@ const handlePickPdf = useCallback(async () => {
               {/* AI toggle */}
               <View style={styles.aiRow}>
                 <TouchableOpacity
-                  onPress={() => setAiRepair((v) => !v)}
+                  onPress={() =>
+                    setAiRepair((v) => !v)
+                  }
                   style={[
                     styles.aiToggle,
-                    aiRepair && styles.aiToggleOn,
+                    aiRepair &&
+                      styles.aiToggleOn,
                   ]}
                 >
                   <Wand2
@@ -450,7 +360,9 @@ const handlePickPdf = useCallback(async () => {
                 />
 
                 <View style={styles.row}>
-                  <View style={{ flex: 1, marginRight: 6 }}>
+                  <View
+                    style={{ flex: 1, marginRight: 6 }}
+                  >
                     <Text style={styles.label}>
                       Semester
                     </Text>
@@ -482,7 +394,9 @@ const handlePickPdf = useCallback(async () => {
                   </View>
 
                   <View style={{ width: 90 }}>
-                    <Text style={styles.label}>Year</Text>
+                    <Text style={styles.label}>
+                      Year
+                    </Text>
                     <TextInput
                       placeholder="2025"
                       placeholderTextColor={
@@ -545,7 +459,9 @@ const handlePickPdf = useCallback(async () => {
                       size={18}
                       color={colors.textPrimary}
                     />
-                    <Text style={styles.fileBtnText}>
+                    <Text
+                      style={styles.fileBtnText}
+                    >
                       {parsing
                         ? "Parsing…"
                         : "Upload PDF"}
@@ -606,7 +522,9 @@ const handlePickPdf = useCallback(async () => {
                     <View
                       style={styles.cardHeader}
                     >
-                      <Text style={styles.cardLabel}>
+                      <Text
+                        style={styles.cardLabel}
+                      >
                         Assignment title
                       </Text>
                       <TouchableOpacity
@@ -640,7 +558,9 @@ const handlePickPdf = useCallback(async () => {
                       }
                     />
 
-                    <Text style={styles.cardLabel}>
+                    <Text
+                      style={styles.cardLabel}
+                    >
                       Class name
                     </Text>
                     <TextInput
@@ -653,16 +573,17 @@ const handlePickPdf = useCallback(async () => {
                           t
                         )
                       }
-                      placeholder="e.g., AS 110-3 – Rome Sketchbook"
+                      placeholder="e.g., AS 110-3 – Rome Sketch"
                       placeholderTextColor={
                         colors.textSecondary +
                         "99"
                       }
                     />
 
-                    <Text style={styles.cardLabel}>
-                      Due date (YYYY-MM-DD or
-                      MM/DD/YYYY)
+                    <Text
+                      style={styles.cardLabel}
+                    >
+                      Due date (YYYY-MM-DD)
                     </Text>
                     <TextInput
                       style={styles.input}
@@ -674,63 +595,22 @@ const handlePickPdf = useCallback(async () => {
                           t
                         )
                       }
-                      placeholder="2025-02-03"
+                      placeholder="2025-09-12"
                       placeholderTextColor={
                         colors.textSecondary +
                         "99"
                       }
                     />
 
-                    <Text style={styles.cardLabel}>
-                      Type
-                    </Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={
-                        false
-                      }
-                      style={{
-                        marginBottom: 4,
-                      }}
+                    <Text
+                      style={styles.cardLabel}
                     >
-                      {TYPE_OPTIONS.map(
-                        (opt) => (
-                          <TouchableOpacity
-                            key={opt}
-                            style={[
-                              styles.typeChip,
-                              d.type === opt &&
-                                styles.typeChipActive,
-                            ]}
-                            onPress={() =>
-                              updateDraft(
-                                d.id,
-                                "type",
-                                opt
-                              )
-                            }
-                          >
-                            <Text
-                              style={[
-                                styles.typeChipText,
-                                d.type === opt &&
-                                  styles.typeChipTextActive,
-                              ]}
-                            >
-                              {opt}
-                            </Text>
-                          </TouchableOpacity>
-                        )
-                      )}
-                    </ScrollView>
-
-                    <Text style={styles.cardLabel}>
-                      Description (optional)
+                      Description
                     </Text>
                     <TextInput
                       style={[
                         styles.input,
-                        { height: 70 },
+                        { height: 60 },
                       ]}
                       multiline
                       textAlignVertical="top"
@@ -742,7 +622,7 @@ const handlePickPdf = useCallback(async () => {
                           t
                         )
                       }
-                      placeholder="Notes or details…"
+                      placeholder="Optional details…"
                       placeholderTextColor={
                         colors.textSecondary +
                         "99"
@@ -750,15 +630,6 @@ const handlePickPdf = useCallback(async () => {
                     />
                   </View>
                 ))}
-
-                <TouchableOpacity
-                  style={styles.addBtn}
-                  onPress={handleAddBlankDraft}
-                >
-                  <Text style={styles.addBtnText}>
-                    Add another assignment
-                  </Text>
-                </TouchableOpacity>
               </ScrollView>
 
               <View style={styles.actionsRow}>
@@ -770,7 +641,7 @@ const handlePickPdf = useCallback(async () => {
                   onPress={closeAll}
                 >
                   <Text style={styles.cancelText}>
-                    Discard
+                    Cancel
                   </Text>
                 </TouchableOpacity>
 
@@ -779,10 +650,10 @@ const handlePickPdf = useCallback(async () => {
                     styles.actionBtn,
                     styles.primaryBtn,
                   ]}
-                  onPress={handleSaveAssignments}
+                  onPress={handleSaveDrafts}
                 >
                   <Text style={styles.primaryText}>
-                    Save assignments
+                    Save to Planner
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -797,22 +668,23 @@ const handlePickPdf = useCallback(async () => {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(15,23,42,0.45)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   sheet: {
     width: "100%",
-    maxWidth: 480,
+    maxWidth: 520,
     backgroundColor: colors.cardBackground,
-    borderRadius: 18,
+    borderRadius: 20,
     padding: 16,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 8,
   },
   title: {
     fontSize: 18,
@@ -820,52 +692,58 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   sub: {
-    color: colors.textSecondary,
-    marginTop: 6,
     marginBottom: 10,
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   aiRow: {
     alignItems: "flex-start",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   aiToggle: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.chipBackground,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 12,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: "#FFFFFF",
+    gap: 6,
   },
   aiToggleOn: {
-    backgroundColor: colors.lavender,
+    backgroundColor: "#4F46E5",
+    borderColor: "#4F46E5",
   },
   aiToggleText: {
-    color: colors.textPrimary,
-    fontWeight: "700",
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: "600",
   },
   aiToggleTextOn: {
-    color: "#fff",
+    color: "#FFFFFF",
   },
   label: {
-    color: colors.textSecondary,
+    fontSize: 12,
     fontWeight: "700",
+    color: colors.textSecondary,
     marginTop: 8,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   input: {
     backgroundColor: "#F9FAFB",
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.borderSubtle,
-    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: colors.textPrimary,
     marginBottom: 4,
+    fontSize: 14,
   },
   row: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    marginTop: 4,
   },
   chipRow: {
     flexDirection: "row",
@@ -875,13 +753,17 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: colors.chipBackground,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    backgroundColor: "#FFFFFF",
   },
   chipActive: {
     backgroundColor: colors.chipActiveBackground,
+    borderColor: colors.chipActiveBackground,
   },
   chipText: {
+    fontSize: 12,
     color: colors.chipText,
     fontWeight: "600",
   },
@@ -890,117 +772,82 @@ const styles = StyleSheet.create({
   },
   colorRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 4,
   },
   colorDot: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: "transparent",
   },
   colorDotActive: {
-    borderColor: colors.textPrimary,
+    borderColor: "#111827",
   },
   rowButtons: {
     flexDirection: "row",
-    gap: 10,
     marginTop: 10,
+    gap: 8,
   },
   fileBtn: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F3F4F6",
+    gap: 6,
+    backgroundColor: "#E5E7EB",
+    borderRadius: 999,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    paddingVertical: 8,
   },
   fileBtnText: {
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
     color: colors.textPrimary,
   },
   actionsRow: {
+    marginTop: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 10,
-    marginTop: 14,
+    justifyContent: "flex-end",
+    gap: 8,
   },
   actionBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
     alignItems: "center",
-    justifyContent: "center",
   },
   cancelBtn: {
     backgroundColor: "#E5E7EB",
   },
   primaryBtn: {
-    backgroundColor: colors.blue,
+    backgroundColor: "#4F46E5",
   },
   cancelText: {
-    color: colors.textPrimary,
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#111827",
   },
   primaryText: {
-    color: "#fff",
-    fontWeight: "800",
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   card: {
+    backgroundColor: "#FFFFFF",
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.borderSubtle,
     padding: 12,
-    marginBottom: 12,
-    backgroundColor: "#F9FAFB",
+    marginBottom: 8,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 4,
   },
   cardLabel: {
     fontSize: 12,
     fontWeight: "700",
     color: colors.textSecondary,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  typeChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginRight: 6,
-    marginBottom: 4,
-  },
-  typeChipActive: {
-    backgroundColor: "#7C3AED",
-    borderColor: "#7C3AED",
-  },
-  typeChipText: {
-    fontSize: 12,
-    color: "#111827",
-    fontWeight: "600",
-  },
-  typeChipTextActive: {
-    color: "#FFFFFF",
-  },
-  addBtn: {
-    marginTop: 4,
-    alignSelf: "flex-start",
-    backgroundColor: "#E5E7EB",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  addBtnText: {
-    fontWeight: "600",
-    color: "#111827",
   },
 });

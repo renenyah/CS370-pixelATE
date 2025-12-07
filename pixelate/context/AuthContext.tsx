@@ -1,137 +1,143 @@
-// context/AuthContext.tsx
 import React, {
   createContext,
-  useState,
-  useEffect,
   useContext,
+  useEffect,
+  useState,
   ReactNode,
 } from "react";
-import * as Linking from "expo-linking";
 import { supabase } from "../constant/supabase";
 
-interface AuthResponse {
-  data?: any;
-  error?: any;
-}
+type SupaUser = NonNullable<Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"]>;
 
-interface AuthErrorResponse {
-  error?: any;
-}
-
-interface AuthContextType {
-  user: any | null;
-  session: any | null;
+type AuthContextValue = {
+  user: SupaUser | null;
   loading: boolean;
-  signUp: (
-    email: string,
-    password: string,
-    fullName?: string
-  ) => Promise<AuthResponse>;
-  signIn: (email: string, password: string) => Promise<AuthResponse>;
-  signOut: () => Promise<AuthErrorResponse>;
-  resetPassword: (email: string) => Promise<AuthResponse>;
-}
+  signIn: (email: string, password: string) => Promise<{ data: any; error: any }>;
+  signUp: (email: string, password: string, name?: string) => Promise<{ data: any; error: any }>;
+  signOut: () => Promise<{ error: any }>;
+};
 
-interface AuthProviderProps {
-  children: ReactNode;
-}
+const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-const AuthContext = createContext<AuthContextType | null>(null);
-
-export const AuthProvider: React.FC<AuthProviderProps> = ({
-  children,
-}) => {
-  const [user, setUser] = useState<any | null>(null);
-  const [session, setSession] = useState<any | null>(null);
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<SupaUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    supabase.auth
-      .getSession()
-      .then(({ data }: { data: { session: any } }) => {
-        const { session } = data;
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+  // ensure user_settings row exists
+  const ensureUserSettings = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("user_settings")
+      .select("user_id, has_seen_tour")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      console.log("[user_settings] select error", error);
+      return;
+    }
+
+    if (!data) {
+      const { error: insertError } = await supabase.from("user_settings").insert({
+        user_id: userId,
+        has_seen_tour: false,
       });
+      if (insertError) {
+        console.log("[user_settings] insert error", insertError);
+      }
+    }
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    const init = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (!mounted) return;
+
+      if (!error && data?.user) {
+        setUser(data.user);
+        await ensureUserSettings(data.user.id);
+      } else {
+        setUser(null);
+      }
+      setLoading(false);
+    };
+
+    init();
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event: any, session: any) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const u = session?.user ?? null;
+      setUser(u);
+      if (u) {
+        await ensureUserSettings(u.id);
       }
-    );
+    });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const value: AuthContextType = {
-    user,
-    session,
-    loading,
+  const signIn: AuthContextValue["signIn"] = async (email, password) => {
+    const result = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    const u = result.data.user;
+    if (u) {
+      await ensureUserSettings(u.id);
+    }
+    return result;
+  };
 
-    // ------------ SIGN UP ------------
-    signUp: async (email, password, fullName) => {
-      // removed hardcoded IP address
-      const redirectUrl = process.env.EXPO_PUBLIC_REDIRECT_URL || "exp://localhost:8081/";
-      
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: fullName
-            ? {
-                full_name: fullName,
-              }
-            : undefined,
-        },
-      });
+  const signUp: AuthContextValue["signUp"] = async (email, password, name) => {
+    const result = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: name ? { full_name: name } : {},
+        emailRedirectTo: process.env.EXPO_PUBLIC_REDIRECT_URL,
+      },
+    });
 
-      return { data, error };
-    },
+    const u = result.data.user;
+    if (u) {
+      await ensureUserSettings(u.id);
+    }
 
-    // ------------ SIGN IN ------------
-    signIn: async (email, password) => {
-      const { data, error } =
-        await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-      return { data, error };
-    },
+    return result;
+  };
 
-    // ------------ SIGN OUT ------------
-    signOut: async () => {
-      const { error } = await supabase.auth.signOut();
-      return { error };
-    },
-
-    // ------------ RESET PASSWORD ------------
-    resetPassword: async (email) => {
-      const redirectUrl = Linking.createURL("/reset-password");
-      
-      const { data, error } =
-        await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: redirectUrl,
-        });
-      return { data, error };
-    },
+  const signOut: AuthContextValue["signOut"] = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      setUser(null);
+    }
+    return { error };
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider
+      value={{
+        user,
+        loading,
+        signIn,
+        signUp,
+        signOut,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
-};
+}
 
-export const useAuth = (): AuthContextType => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within AuthProvider");
   }
-  return context;
-};
+  return ctx;
+}

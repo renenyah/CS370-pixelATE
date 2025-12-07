@@ -16,6 +16,7 @@ import {
   Assignment,
   AssignmentType,
   safeISO,
+  normalizeKey,
 } from "../../components/AssignmentsContext";
 import { colors } from "../../constant/colors";
 
@@ -33,31 +34,49 @@ const TYPE_OPTIONS: AssignmentType[] = [
 export default function ClassDetailScreen() {
   const { assignments, updateAssignment } = useAssignments();
   const params = useLocalSearchParams<{ course?: string }>();
-  const courseName = params.course || "";
 
-  // ---------- list for this course ----------
+  const rawCourse = Array.isArray(params.course)
+    ? params.course[0]
+    : params.course || "";
+
+  const routeKey = normalizeKey(rawCourse);
+
+  // All assignments for this course (case-insensitive)
   const items = useMemo(
     () =>
       assignments
-        .filter((a) => a.course === courseName)
-        .sort((a, b) => (a.dueISO || "").localeCompare(b.dueISO || "")),
-    [assignments, courseName]
+        .filter((a) => normalizeKey(a.course) === routeKey)
+        .sort((a, b) =>
+          (a.dueISO || "").localeCompare(b.dueISO || "")
+        ),
+    [assignments, routeKey]
   );
+
+  // Pick a nice display name
+  const displayCourseName = useMemo(() => {
+    const match = assignments.find(
+      (a) => normalizeKey(a.course) === routeKey
+    );
+    return match?.course || rawCourse || "Untitled Course";
+  }, [assignments, routeKey, rawCourse]);
 
   // ---------- edit modal state ----------
   const [editVisible, setEditVisible] = useState(false);
-  const [editing, setEditing] = useState<Assignment | null>(null);
+  const [editing, setEditing] = useState<Assignment | null>(
+    null
+  );
   const [editTitle, setEditTitle] = useState("");
-  const [editCourse, setEditCourse] = useState(courseName);
-  const [editType, setEditType] = useState<AssignmentType>("Assignment");
+  const [editCourse, setEditCourse] = useState(displayCourseName);
+  const [editType, setEditType] =
+    useState<AssignmentType>("Assignment");
   const [editDate, setEditDate] = useState("");
   const [editDesc, setEditDesc] = useState("");
-  const [editTime, setEditTime] = useState("11:59pm"); // notes only; logic still treats due date as all-day
+  const [editTime, setEditTime] = useState("11:59pm");
 
   const openEdit = (a: Assignment) => {
     setEditing(a);
     setEditTitle(a.title);
-    setEditCourse(a.course);
+    setEditCourse(a.course || displayCourseName);
     setEditType(a.type || "Assignment");
     setEditDate(a.dueISO || "");
     setEditDesc(a.description || "");
@@ -89,7 +108,6 @@ export default function ClassDetailScreen() {
       type: editType,
       dueISO: normalizedDate,
       description: editDesc.trim(),
-      // editTime is for notes only right now – not stored on the Assignment model
     });
 
     closeEdit();
@@ -102,8 +120,12 @@ export default function ClassDetailScreen() {
         contentContainerStyle={{ paddingBottom: 120 }}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>{courseName || "Untitled Course"}</Text>
-          <Text style={styles.sub}>All assignments for this class.</Text>
+          <Text style={styles.title}>
+            {displayCourseName}
+          </Text>
+          <Text style={styles.sub}>
+            All assignments for this class.
+          </Text>
         </View>
 
         {items.length === 0 ? (
@@ -116,30 +138,41 @@ export default function ClassDetailScreen() {
           <View style={{ gap: 10 }}>
             {items.map((a) => {
               const dueLabel = a.dueISO
-                ? new Date(a.dueISO + "T00:00:00").toLocaleDateString()
+                ? new Date(
+                    a.dueISO + "T00:00:00"
+                  ).toLocaleDateString()
                 : undefined;
 
               return (
                 <View key={a.id} style={styles.card}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.cardTitle}>{a.title}</Text>
+                    <Text style={styles.cardTitle}>
+                      {a.title}
+                    </Text>
                     {a.type && (
-                      <Text style={styles.cardType}>{a.type}</Text>
+                      <Text style={styles.cardType}>
+                        {a.type}
+                      </Text>
                     )}
                     {dueLabel && (
-                      <Text style={styles.cardMeta}>Due {dueLabel}</Text>
+                      <Text style={styles.cardMeta}>
+                        Due {dueLabel}
+                      </Text>
                     )}
                     {a.description && (
-                      <Text style={styles.cardDesc}>{a.description}</Text>
+                      <Text style={styles.cardDesc}>
+                        {a.description}
+                      </Text>
                     )}
                   </View>
 
-                  {/* Edit button */}
                   <TouchableOpacity
                     style={styles.editBtn}
                     onPress={() => openEdit(a)}
                   >
-                    <Text style={styles.editBtnText}>Edit</Text>
+                    <Text style={styles.editBtnText}>
+                      Edit
+                    </Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -148,7 +181,7 @@ export default function ClassDetailScreen() {
         )}
       </ScrollView>
 
-      {/* ---------- Edit modal ---------- */}
+      {/* Edit modal */}
       <Modal
         visible={editVisible}
         transparent
@@ -157,35 +190,47 @@ export default function ClassDetailScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>Edit assignment</Text>
+            <Text style={styles.modalTitle}>
+              Edit assignment
+            </Text>
             <Text style={styles.modalSub}>
               Update the title, class, type, due date, and description. Time is
-              treated like notes only for now.
+              assumed to be 11:59pm for schedule logic.
             </Text>
 
             <ScrollView
               style={{ maxHeight: 420 }}
               contentContainerStyle={{ paddingBottom: 8 }}
             >
-              <Text style={styles.modalLabel}>Title</Text>
+              <Text style={styles.modalLabel}>
+                Title
+              </Text>
               <TextInput
                 style={styles.input}
                 value={editTitle}
                 onChangeText={setEditTitle}
                 placeholder="Assignment title"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
               />
 
-              <Text style={styles.modalLabel}>Class name</Text>
+              <Text style={styles.modalLabel}>
+                Class name
+              </Text>
               <TextInput
                 style={styles.input}
                 value={editCourse}
                 onChangeText={setEditCourse}
                 placeholder="e.g., CS 370 – Algorithms"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
               />
 
-              <Text style={styles.modalLabel}>Assignment type</Text>
+              <Text style={styles.modalLabel}>
+                Assignment type
+              </Text>
               <View style={styles.typeRow}>
                 {TYPE_OPTIONS.map((opt) => {
                   const active = editType === opt;
@@ -194,14 +239,17 @@ export default function ClassDetailScreen() {
                       key={opt}
                       style={[
                         styles.typeChip,
-                        active && styles.typeChipActive,
+                        active &&
+                          styles.typeChipActive,
                       ]}
                       onPress={() => setEditType(opt)}
                     >
                       <Text
                         style={[
                           styles.typeChipText,
-                          active && styles.typeChipTextActive,
+                          active &&
+                            styles
+                              .typeChipTextActive,
                         ]}
                       >
                         {opt}
@@ -212,23 +260,29 @@ export default function ClassDetailScreen() {
               </View>
 
               <Text style={styles.modalLabel}>
-                Due date (YYYY-MM-DD or MM/DD/YYYY)
+                Due date (YYYY-MM-DD)
               </Text>
               <TextInput
                 style={styles.input}
                 value={editDate}
                 onChangeText={setEditDate}
                 placeholder="2025-12-06"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
               />
 
-              <Text style={styles.modalLabel}>Due time (notes only)</Text>
+              <Text style={styles.modalLabel}>
+                Due time (notes only)
+              </Text>
               <TextInput
                 style={styles.input}
                 value={editTime}
                 onChangeText={setEditTime}
                 placeholder="11:59pm"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
               />
 
               <Text style={styles.modalLabel}>
@@ -241,23 +295,35 @@ export default function ClassDetailScreen() {
                 value={editDesc}
                 onChangeText={setEditDesc}
                 placeholder="Notes or details…"
-                placeholderTextColor={colors.textSecondary + "99"}
+                placeholderTextColor={
+                  colors.textSecondary + "99"
+                }
               />
             </ScrollView>
 
             <View style={styles.actionsRow}>
               <TouchableOpacity
-                style={[styles.actionBtn, styles.cancelBtn]}
+                style={[
+                  styles.actionBtn,
+                  styles.cancelBtn,
+                ]}
                 onPress={closeEdit}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                <Text style={styles.cancelText}>
+                  Cancel
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.actionBtn, styles.saveBtn]}
+                style={[
+                  styles.actionBtn,
+                  styles.saveBtn,
+                ]}
                 onPress={handleSave}
               >
-                <Text style={styles.saveText}>Save changes</Text>
+                <Text style={styles.saveText}>
+                  Save changes
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -342,8 +408,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#111827",
   },
-
-  // modal
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(15,23,42,0.45)",

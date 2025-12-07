@@ -14,6 +14,7 @@ import { useRouter } from "expo-router";
 import {
   useAssignments,
   ClassFolder,
+  normalizeKey,
 } from "../components/AssignmentsContext";
 import { colors } from "../constant/colors";
 
@@ -29,40 +30,51 @@ const SEMESTER_CHOICES = ["Spring", "Summer", "Fall"] as const;
 
 export default function ClassesScreen() {
   const router = useRouter();
-  const { assignments, classes, updateClassFolder } = useAssignments();
+  const { assignments, classes, updateClassFolder } =
+    useAssignments();
 
   const [semesterFilter, setSemesterFilter] =
     useState<string>("All");
 
   // edit modal state
   const [editVisible, setEditVisible] = useState(false);
-  const [editingOriginalName, setEditingOriginalName] = useState<string>("");
+  const [editingOriginalName, setEditingOriginalName] =
+    useState<string>("");
   const [editName, setEditName] = useState<string>("");
-  const [editSemester, setEditSemester] = useState<string>("Fall");
+  const [editSemester, setEditSemester] =
+    useState<string>("Fall");
   const [editYear, setEditYear] = useState<string>("");
 
   const folders: FolderView[] = useMemo(() => {
+    // key = normalized course name
     const map = new Map<string, FolderView>();
 
     // Start from explicit class folders
     classes.forEach((c: ClassFolder) => {
-      const key = c.name;
-      map.set(key, {
-        name: c.name,
-        color: c.color,
-        semester: c.semester,
-        year: c.year,
-        assignmentCount: 0,
-      });
+      const key = normalizeKey(c.name);
+      if (!key) return;
+
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          name: c.name,
+          color: c.color,
+          semester: c.semester,
+          year: c.year,
+          assignmentCount: 0,
+        });
+      }
     });
 
     // Add courses inferred from assignments
     assignments.forEach((a) => {
       if (!a.course) return;
-      const existing = map.get(a.course);
+      const key = normalizeKey(a.course);
+      if (!key) return;
+
+      const existing = map.get(key);
       if (existing) {
         existing.assignmentCount += 1;
-        // fill missing sem/year if present on assignment
         if (!existing.semester && a.semester) {
           existing.semester = a.semester;
         }
@@ -70,7 +82,7 @@ export default function ClassesScreen() {
           existing.year = a.year;
         }
       } else {
-        map.set(a.course, {
+        map.set(key, {
           name: a.course,
           color: a.color || colors.lavender,
           semester: a.semester,
@@ -215,7 +227,6 @@ export default function ClassesScreen() {
                     </Text>
 
                     <View style={styles.folderActions}>
-                      {/* 🔹 NEW: Edit button (keeps layout, just adds another pill) */}
                       <TouchableOpacity
                         style={styles.editButton}
                         onPress={() => openEditModalForFolder(f)}
@@ -249,7 +260,7 @@ export default function ClassesScreen() {
         )}
       </ScrollView>
 
-      {/* 🔹 Edit Class Modal */}
+      {/* Edit Class Modal */}
       <Modal
         visible={editVisible}
         transparent
@@ -461,7 +472,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#4F46E5",
   },
-  // 🔹 NEW styles for edit button + modal
   editButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,

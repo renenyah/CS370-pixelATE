@@ -19,6 +19,7 @@ import {
   useAssignments,
   isSameISO,
 } from "../components/AssignmentsContext";
+import { colors } from "@/constant/colors";
 
 type ViewMode = "month" | "week" | "day";
 
@@ -354,7 +355,7 @@ export default function CalendarScreen() {
                       </Text>
                     )}
                     {!!a.type && (
-                      <Text style={styles.taskType}>
+                      <Text style={styles.taskDate}>
                         {a.type}
                       </Text>
                     )}
@@ -624,6 +625,12 @@ const styles = StyleSheet.create({
   },
   taskType: {
     color: "#6D28D9",
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  taskDate: {
+    color: colors.lavender,
     marginTop: 2,
     fontSize: 12,
     fontWeight: "600",

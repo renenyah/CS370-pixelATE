@@ -26,11 +26,12 @@ type AddClassModalProps = {
 };
 
 const colorOptions = [
-  "#7C3AED",
-  "#2563EB",
-  "#059669",
-  "#DC2626",
-  "#F59E0B",
+  "#CDB4DB", // lavender
+  "#FFC8FC", // pink
+  "#FBBF24", // accent
+  "#BDE0FE", // blueLight
+  "#A2D2FF", // blue
+  "#CCE2CB", // green
 ];
 
 export default function AddClassModal({
@@ -211,7 +212,7 @@ const styles = StyleSheet.create({
   },
   modal: {
     width: "88%",
-    backgroundColor: "#0B1220",
+    backgroundColor: colors.cardBackground,
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
@@ -224,13 +225,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   input: {
-    backgroundColor: "#020617",
+    backgroundColor: "##F9FAFB",
     borderWidth: 1,
-    borderColor: "#374151",
+    borderColor:  colors.borderSubtle,
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: "#F9FAFB",
+    color: colors.textPrimary,
     fontSize: 14,
     marginBottom: 10,
   },
@@ -257,7 +258,7 @@ const styles = StyleSheet.create({
     borderColor: "#FFFFFF",
   },
   saveButton: {
-    backgroundColor: colors.lavender,
+    backgroundColor: "#7C3AED",
     borderRadius: 999,
     paddingVertical: 12,
     alignItems: "center",

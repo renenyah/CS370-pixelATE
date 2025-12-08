@@ -621,10 +621,6 @@ function AssignmentCard({
             { backgroundColor: dotColor },
           ]}
         />
-        <ArrowRight
-          size={18}
-          color="#9CA3AF"
-        />
       </View>
     </View>
   );

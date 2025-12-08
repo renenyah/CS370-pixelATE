@@ -59,7 +59,7 @@ export default function LoginScreen() {
   return (
     <View style={styles.screen}>
       <View style={styles.card}>
-        <Text style={styles.title}>Welcome back</Text>
+        <Text style={styles.title}>Welcome To Dueable</Text>
         <Text style={styles.subtitle}>
           Log in to see what’s due and stay ahead of your classes.
         </Text>

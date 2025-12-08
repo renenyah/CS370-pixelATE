@@ -33,9 +33,10 @@ const SEMESTERS = ["Spring", "Summer", "Fall"] as const;
 const CLASS_COLORS = [
   "#CDB4DB", // lavender
   "#FFC8FC", // pink
+  "#FBBF24", // accent
   "#BDE0FE", // blueLight
   "#A2D2FF", // blue
-  "#FBBF24", // accent
+  "#CCE2CB", // green
 ];
 
 export default function UploadSyllabusModal({

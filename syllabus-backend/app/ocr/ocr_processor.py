@@ -20,14 +20,23 @@ except Exception:
 # Tesseract config
 # ---------------------------------------------------------------------------
 _TESS_CMD = os.getenv("TESSERACT_CMD")
-if _TESS_CMD and os.path.exists(_TESS_CMD):
+if _TESS_CMD:
+    # If you set TESSERACT_CMD in env (e.g. "tesseract" or "/usr/bin/tesseract")
     pytesseract.pytesseract.tesseract_cmd = _TESS_CMD
 else:
+    # 2) Local dev on Mac via Homebrew (your laptop)
     default_mac_path = "/opt/homebrew/bin/tesseract"
     if os.path.exists(default_mac_path):
         pytesseract.pytesseract.tesseract_cmd = default_mac_path
+    # 3) Else: do NOT set anything and let pytesseract use "tesseract"
+    # in PATH (this is what we want inside the Render Docker container)
 
-os.environ.setdefault("TESSDATA_PREFIX", "/usr/share/tesseract-ocr/4.00/tessdata")
+# Optional: only set tessdata prefix if not already defined
+os.environ.setdefault(
+    "TESSDATA_PREFIX", "/usr/share/tesseract-ocr/4.00/tessdata"
+)
+
+# Project import path tweak
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # ---------------------------------------------------------------------------

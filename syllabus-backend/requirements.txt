@@ -10,9 +10,8 @@ numpy
 opencv-python-headless
 Pillow
 pytesseract
-pytesseract
 Pillow
-
+pydantic
 
 # --- PDF + date parsing ---
 PyMuPDF

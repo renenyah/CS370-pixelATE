@@ -1,5 +1,5 @@
 // app/(protected)/home.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -228,24 +228,25 @@ export default function HomeScreen() {
   }, [dueTodayAll, todayCourse]);
 
   // collapsible state (same toggle used for all three sections)
-  const [collapsed, setIsCollapsed] = useState(true);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
-  const rotateValue = useState(new Animated.Value(0))[0];
+  const rotateValues = [
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+  ]
 
-  const toggle = () => {
-    setIsCollapsed(!collapsed);
+  const toggleSection = (i: number) => {
+    const isOpening = openIndex !== i;
 
-    Animated.timing(rotateValue, {
-      toValue: collapsed ? 1 : 0,
+    setOpenIndex(isOpening ? i : null);
+
+    Animated.timing(rotateValues[i], {
+      toValue: isOpening ? 1 : 0,
       duration: 200,
       useNativeDriver: true,
     }).start();
   };
-
-  const rotate = rotateValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "90deg"],
-  });
 
   const upcoming7 = useMemo(
     () =>
@@ -345,7 +346,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <TouchableOpacity
             style={styles.sectionHeaderRow}
-            onPress={toggle}
+            onPress={() => toggleSection(0)}
           >
             <Text style={styles.sectionTitle}>
               Today’s Assignments
@@ -354,7 +355,17 @@ export default function HomeScreen() {
             {dueToday.length === 0 ? (
               <AntDesign name="check-circle" size={22} />
             ) : (
-              <Animated.View style={{ transform: [{ rotate }] }}>
+              <Animated.View style={{ 
+                transform: [
+                  { 
+                    rotate: rotateValues[0].interpolate({
+                      inputRange: [0,1],
+                      outputRange: ["0deg","90deg"]
+                    }), 
+                  },
+                ], 
+              }}
+              >
                 <AntDesign name="caret-right" size={22} />
               </Animated.View>
             )}
@@ -365,7 +376,7 @@ export default function HomeScreen() {
           ) : (
             <View style={{ gap: 10 }}>
               {dueToday.map((a) => (
-                <Collapsible key={a.id} collapsed={collapsed}>
+                <Collapsible key={a.id} collapsed={openIndex !== 0}>
                   <AssignmentCard assignment={a} />
                 </Collapsible>
               ))}
@@ -377,7 +388,7 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <TouchableOpacity
             style={styles.sectionHeaderRow}
-            onPress={toggle}
+            onPress={() => toggleSection(1)}
           >
             <Text style={styles.sectionTitle}>
               Upcoming
@@ -386,7 +397,17 @@ export default function HomeScreen() {
             {upcoming7.length === 0 ? (
               <AntDesign name="check-circle" size={22} />
             ) : (
-              <Animated.View style={{ transform: [{ rotate }] }}>
+              <Animated.View style={{ 
+                transform: [
+                  { 
+                    rotate: rotateValues[1].interpolate({
+                      inputRange: [0,1],
+                      outputRange: ["0deg","90deg"]
+                    }), 
+                  },
+                ], 
+              }}
+              >
                 <AntDesign name="caret-right" size={22} />
               </Animated.View>
             )}
@@ -404,7 +425,7 @@ export default function HomeScreen() {
                   )
                 )
                 .map((a) => (
-                  <Collapsible key={a.id} collapsed={collapsed}>
+                  <Collapsible key={a.id} collapsed={openIndex !== 1}>
                     <AssignmentCard assignment={a} />
                   </Collapsible>
                 ))}
@@ -417,12 +438,22 @@ export default function HomeScreen() {
           <View style={styles.section}>
             <TouchableOpacity
               style={styles.sectionHeaderRow}
-              onPress={toggle}
+              onPress={() => toggleSection(2)}
             >
               <Text style={styles.sectionTitle}>
                 Overdue
               </Text>
-              <Animated.View style={{ transform: [{ rotate }] }}>
+              <Animated.View style={{ 
+                transform: [
+                  { 
+                    rotate: rotateValues[2].interpolate({
+                      inputRange: [0,1],
+                      outputRange: ["0deg","90deg"]
+                    }), 
+                  },
+                ], 
+              }}
+              >
                 <AntDesign name="caret-right" size={22} />
               </Animated.View>
             </TouchableOpacity>
@@ -436,7 +467,7 @@ export default function HomeScreen() {
                   )
                 )
                 .map((a) => (
-                  <Collapsible key={a.id} collapsed={collapsed}>
+                  <Collapsible key={a.id} collapsed={openIndex !== 2}>
                     <AssignmentCard assignment={a} />
                   </Collapsible>
                 ))}

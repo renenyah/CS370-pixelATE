@@ -219,7 +219,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(148,163,184,0.3)",
   },
   title: {
-    color: "#F9FAFB",
+    color: colors.textPrimary,
     fontWeight: "700",
     fontSize: 18,
     marginBottom: 16,

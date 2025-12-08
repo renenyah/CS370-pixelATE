@@ -192,10 +192,95 @@ export default function AddAssignmentModal({
     return ds;
   };
 
-  // ------------ IMAGE / OCR ------------
-  const handlePickImage = async () => {
+// Replace your current handlePickImage function with this:
+
+const handlePickImage = async () => {
+  try {
+    // 🌐 Web-compatible image picking
+    if (Platform.OS === "web") {
+      // Create a file input element for web
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      
+      input.onchange = async (e: any) => {
+        const file = e.target?.files?.[0];
+        if (!file) return;
+
+        setParsing(true);
+        try {
+          const fd = new FormData();
+          fd.append("file", file, file.name);
+
+          const url = buildUrl(
+            `/assignments/image?preprocess=${encodeURIComponent(
+              "screenshot"
+            )}&use_llm=true`
+          );
+          console.log("IMAGE (AddAssignmentModal) →", url);
+
+          const resp = await fetch(url, {
+            method: "POST",
+            body: fd,
+          });
+
+          if (!resp.ok) {
+            console.log("Image resp not ok:", resp.status, resp.statusText);
+            return handleBackendError(
+              `HTTP ${resp.status} – ${resp.statusText}`
+            );
+          }
+
+          let json: ApiResponse | any;
+          try {
+            json = (await resp.json()) as ApiResponse;
+          } catch (e: any) {
+            console.log("Image JSON parse error:", e);
+            return handleBackendError("Could not parse server response.");
+          }
+
+          console.log(
+            "Image resp (AddAssignmentModal) →",
+            JSON.stringify(json)
+          );
+
+          const items = Array.isArray(json?.items)
+            ? json.items
+            : Array.isArray(json)
+            ? json
+            : [];
+
+          if (!items.length) {
+            Alert.alert(
+              "No assignments found",
+              "The extractor didn't find any assignments in this image."
+            );
+            return;
+          }
+
+          const ds = makeDraftsFromItems(items);
+
+          if (onDraftsExtracted) {
+            onDraftsExtracted(ds);
+            closeAll();
+          } else {
+            setDrafts(ds);
+          }
+        } catch (e: any) {
+          console.log("Image parse error:", e);
+          Alert.alert("Error", String(e?.message || e));
+        } finally {
+          setParsing(false);
+        }
+      };
+
+      input.click();
+      return;
+    }
+
+    // 📱 Native mobile image picking (iOS/Android)
     const res = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images, // keep this
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
       quality: 1,
     });
@@ -263,12 +348,10 @@ export default function AddAssignmentModal({
 
       const ds = makeDraftsFromItems(items);
 
-      // Preferred: send drafts up so parent can open DraftEditorModal
       if (onDraftsExtracted) {
         onDraftsExtracted(ds);
         closeAll();
       } else {
-        // Fallback: show inline in this modal
         setDrafts(ds);
       }
     } catch (e: any) {
@@ -277,7 +360,12 @@ export default function AddAssignmentModal({
     } finally {
       setParsing(false);
     }
-  };
+  } catch (e: any) {
+    console.log("Image picker error:", e);
+    Alert.alert("Error", "Failed to pick image");
+    setParsing(false);
+  }
+};
 
   const updateDraft = (id: string, field: keyof Draft, value: string) => {
     setDrafts((prev) =>

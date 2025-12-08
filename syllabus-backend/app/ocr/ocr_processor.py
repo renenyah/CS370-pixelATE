@@ -8,7 +8,6 @@ from typing import List, Dict, Any, Optional, Tuple, Set
 
 import cv2
 import numpy as np
-import platform
 import pytesseract
 from PIL import Image, ImageFilter
 
@@ -20,28 +19,21 @@ except Exception:
 # ---------------------------------------------------------------------------
 # Tesseract config
 # ---------------------------------------------------------------------------
-# 1) If user explicitly sets TESSERACT_CMD, honor it
-_tess_cmd = os.getenv("TESSERACT_CMD")
-if _tess_cmd and os.path.exists(_tess_cmd):
-    pytesseract.pytesseract.tesseract_cmd = _tess_cmd
+_TESS_CMD = os.getenv("TESSERACT_CMD")
+if _TESS_CMD:
+    # If you set TESSERACT_CMD in env (e.g. "tesseract" or "/usr/bin/tesseract")
+    pytesseract.pytesseract.tesseract_cmd = _TESS_CMD
 else:
-    # 2) Only try the Homebrew path when running on macOS
-    if platform.system() == "Darwin":
-        default_mac = "/opt/homebrew/bin/tesseract"
-        if os.path.exists(default_mac):
-            pytesseract.pytesseract.tesseract_cmd = default_mac
-    # On Linux (Render), DO NOT set anything → use system binary (/usr/bin/tesseract)
+    # 2) Local dev on Mac via Homebrew (your laptop)
+    default_mac_path = "/opt/homebrew/bin/tesseract"
+    if os.path.exists(default_mac_path):
+        pytesseract.pytesseract.tesseract_cmd = default_mac_path
+    # 3) Else: do NOT set anything and let pytesseract use "tesseract"
+    # in PATH (this is what we want inside the Render Docker container)
 
-# Let apt’s install configure tessdata
+# Optional: only set tessdata prefix if not already defined
 os.environ.setdefault(
-    "TESSDATA_PREFIX",
-    "/usr/share/tesseract-ocr/4.00/tessdata",
-)
-
-# Whatever else you already had:
-sys.path.insert(
-    0,
-    os.path.join(os.path.dirname(__file__), ".."),
+    "TESSDATA_PREFIX", "/usr/share/tesseract-ocr/4.00/tessdata"
 )
 
 # Project import path tweak

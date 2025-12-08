@@ -95,115 +95,105 @@ export default function UploadSyllabusModal({
     setDrafts((prev) => prev.filter((d) => d.id !== id));
   };
 
-  // ---- PDF picker with backend call ----
-  const handlePickPdf = async () => {
-    try {
-      const res =
-        await DocumentPicker.getDocumentAsync({
-          type:
-            Platform.OS === "web"
-              ? "application/pdf"
-              : "application/pdf",
-          copyToCacheDirectory: true,
-          multiple: false,
-        });
+// ---- PDF picker with backend call ----
+const handlePickPdf = async () => {
+  try {
+    const res = await DocumentPicker.getDocumentAsync({
+      type: "application/pdf",
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
 
-      if (res.canceled || !res.assets?.length) {
-        return;
+    if (res.canceled || !res.assets?.length) {
+      return;
+    }
+
+    const asset = res.assets[0];
+    setParsing(true);
+
+    const form = new FormData();
+    
+    // 🌐 Web vs Native file handling
+    if (Platform.OS === "web") {
+      // On web, asset.file is a File/Blob object
+      if (asset.file) {
+        form.append("file", asset.file, asset.name || "syllabus.pdf");
+      } else {
+        // Fallback: fetch the blob from URI
+        const response = await fetch(asset.uri);
+        const blob = await response.blob();
+        form.append("file", blob, asset.name || "syllabus.pdf");
       }
-
-      const asset = res.assets[0];
-      const uri = asset.uri;
-
-      setParsing(true);
-
-      const form = new FormData();
+    } else {
+      // On mobile, use the URI
       form.append("file", {
-        uri,
+        uri: asset.uri,
         name: asset.name ?? "syllabus.pdf",
         type: "application/pdf",
       } as any);
+    }
 
-      const url = buildUrl(
-        `/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`
-      );
-      console.log("PDF →", url);
+    const url = buildUrl(
+      `/assignments/pdf?use_llm=${aiRepair ? "true" : "false"}`
+    );
+    console.log("PDF →", url);
 
-      const resp = await fetch(url, {
-        method: "POST",
-        body: form,
-      });
+    const resp = await fetch(url, {
+      method: "POST",
+      body: form,
+    });
 
-      if (!resp.ok) {
-        if (resp.status === 409) {
-          // (In case you later make backend return 409 for exact duplicate PDF)
-          setParsing(false);
-          Alert.alert(
-            "Already uploaded",
-            "This syllabus (or an identical copy) has already been uploaded. If you need to adjust assignments, edit them from the Classes tab."
-          );
-          return;
-        }
-
-        console.log(
-          "PDF resp not ok:",
-          resp.status,
-          resp.statusText
-        );
+    if (!resp.ok) {
+      if (resp.status === 409) {
         setParsing(false);
         Alert.alert(
-          "Error",
-          `Failed to parse PDF (HTTP ${resp.status}).`
+          "Already uploaded",
+          "This syllabus (or an identical copy) has already been uploaded. If you need to adjust assignments, edit them from the Classes tab."
         );
         return;
       }
 
-      const json = await resp.json();
-      console.log("PDF parsed:", json);
-
-      const serverItems: any[] =
-        json.items || json.assignments || [];
-
-      const extracted: Draft[] = serverItems.map((a: any) => {
-        const rawDue =
-          a.due_date_iso ||
-          (a.due_at
-            ? String(a.due_at).slice(0, 10)
-            : null);
-
-        return {
-          id:
-            typeof crypto !== "undefined" &&
-            "randomUUID" in crypto
-              ? crypto.randomUUID()
-              : `${Date.now()}-${Math.random()}`,
-          title: a.title ?? "",
-          course:
-            courseName ||
-            a.course ||
-            "",
-          type: a.assignment_type ?? a.type,
-          dueISO: rawDue,
-          description: a.description || "",
-          semester,
-          year: Number(year) || undefined,
-          color: folderColor,
-          priority: "medium",
-        };
-      });
-
-      setDrafts(extracted);
-      setStep("review");
+      console.log("PDF resp not ok:", resp.status, resp.statusText);
       setParsing(false);
-    } catch (e: any) {
-      console.error("PDF parse error:", e);
-      setParsing(false);
-      Alert.alert(
-        "Error",
-        "There was a problem parsing the PDF."
-      );
+      Alert.alert("Error", `Failed to parse PDF (HTTP ${resp.status}).`);
+      return;
     }
-  };
+
+    const json = await resp.json();
+    console.log("PDF parsed:", json);
+
+    const serverItems: any[] = json.items || json.assignments || [];
+
+    const extracted: Draft[] = serverItems.map((a: any) => {
+      const rawDue =
+        a.due_date_iso || (a.due_at ? String(a.due_at).slice(0, 10) : null);
+
+      return {
+        id:
+          typeof crypto !== "undefined" && "randomUUID" in crypto
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random()}`,
+        title: a.title ?? "",
+        course: courseName || a.course || "",
+        type: a.assignment_type ?? a.type,
+        dueISO: rawDue,
+        description: a.description || "",
+        semester,
+        year: Number(year) || undefined,
+        color: folderColor,
+        priority: "medium",
+      };
+    });
+
+    setDrafts(extracted);
+    setStep("review");
+    setParsing(false);
+  } catch (e: any) {
+    console.error("PDF parse error:", e);
+    setParsing(false);
+    Alert.alert("Error", "There was a problem parsing the PDF.");
+  }
+};
 
   const handleParseText = async () => {
     if (!syllabusText.trim()) {

@@ -12,7 +12,7 @@ const normalized =
 
 // Default to Render backend if no env set
 export const API_BASE =
-  normalized || "https://cs370-pixelate.onrender.com";
+  normalized || "https://cs370pixelate.onrender.com";
 
 export function buildUrl(path: string): string {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
